@@ -69,14 +69,12 @@ function AdresAutoComplete({ setAdresFields }) {
 
   useEffect(() => {
     if (query.length < 3) { setSuggestions([]); return; }
-    // We gebruiken een debounce zou netter zijn, maar voor nu direct fetchen
-    const timer = setTimeout(() => {
-        fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`)
-          .then((res) => res.json())
-          .then((data) => setSuggestions(data.features || []))
-          .catch(() => {});
-    }, 300);
-    return () => clearTimeout(timer);
+    
+    // Simpele fetch naar de Franse overheid API
+    fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`)
+      .then((res) => res.json())
+      .then((data) => setSuggestions(data.features || []))
+      .catch(() => {});
   }, [query]);
 
   function handleSelect(s) {
@@ -84,12 +82,12 @@ function AdresAutoComplete({ setAdresFields }) {
     setSuggestions([]);
     const [lon, lat] = s.geometry.coordinates;
     
-    // Hier slaan we alles op wat we nodig hebben
+    // We slaan de INSEE code (citycode) op, dit is cruciaal voor de fallback link!
     setAdresFields({
       adres: s.properties.label,
       city: s.properties.city,
       zip: s.properties.postcode,
-      insee: s.properties.citycode,
+      insee: s.properties.citycode, 
       lat, lon
     });
   }
@@ -161,14 +159,12 @@ function App() {
 
   // --- DATA OPHALEN ---
   useEffect(() => {
-    // Alleen starten als we coördinaten hebben
     if (adresFields.lat && adresFields.lon) {
       setLoading(true);
       setKadasterLoading(true);
-      setKadasterInfo(null); // Reset vorige resultaat
+      setKadasterInfo(null);
       
-      // 1. Kadaster (IGN) - TERUG NAAR DE BASIS
-      // We gebruiken alleen geom (lat/lon). Dit is minder streng en vindt vaker resultaat.
+      // 1. Kadaster (IGN) - Ophalen PERCEELNUMMER
       const geomParams = encodeURIComponent(JSON.stringify({
         type: "Point",
         coordinates: [adresFields.lon, adresFields.lat]
@@ -185,24 +181,23 @@ function App() {
               numero: p.numero,
               oppervlakte: p.contenance
             });
-            // Alleen invullen als nog leeg
             if (!perceel) setPerceel(p.contenance);
           } else {
-            console.log("Geen perceel gevonden op exacte punt.");
-            setKadasterInfo(null);
+            // Geen perceel gevonden (punt op de weg), we laten kadasterInfo null
+            // De UI zal nu de "slimme link" tonen
+            console.log("Punt ligt waarschijnlijk op openbare weg/straat, geen perceel ID.");
           }
           setKadasterLoading(false);
         })
         .catch((err) => {
-          console.error("Fout bij kadaster ophalen:", err);
+          console.error(err);
           setKadasterLoading(false);
         });
 
       // 2. Slimme Prijszoeker (DVF)
       const fetchPrices = async () => {
-        const distances = [500, 1000, 3000, 5000, 10000]; // Zoekstraal in meters
-        setDvfInfo("Zoeken naar data...");
-        
+        const distances = [500, 1000, 3000, 5000];
+        setDvfInfo("Zoeken naar vergelijkbare huizen...");
         let found = false;
 
         for (const dist of distances) {
@@ -211,7 +206,6 @@ function App() {
             const res = await fetch(`https://api.cquest.org/dvf?lat=${adresFields.lat}&lon=${adresFields.lon}&dist=${dist}`);
             const data = await res.json();
             
-            // Filter: Koop, Huis, >15k prijs, >30m2
             const relevant = data.features ? data.features.filter(f => 
               f.properties.nature_mutation === "Vente" &&
               f.properties.type_local === "Maison" &&
@@ -221,36 +215,45 @@ function App() {
 
             if (relevant.length >= 3) {
               let prices = relevant.map(h => h.properties.valeur_fonciere / h.properties.surface_reelle_bati);
-              
-              // Filter uitschieters (basic)
+              // Filter uitschieters
               prices.sort((a, b) => a - b);
-              const trim = Math.floor(prices.length * 0.2); // haal 20% laagste en hoogste weg
-              if (prices.length > 5) {
-                prices = prices.slice(trim, prices.length - trim);
-              }
+              const trim = Math.floor(prices.length * 0.2);
+              if (prices.length > 5) prices = prices.slice(trim, prices.length - trim);
               
               const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
               setM2Prijs(avg);
-              setDvfInfo(`✅ ${relevant.length} huizen in straal van ${dist}m.`);
+              setDvfInfo(`✅ ${relevant.length} verkopen gevonden (< ${dist}m).`);
               found = true;
             }
-          } catch (e) { 
-            console.error("DVF Error:", e);
-          }
+          } catch (e) { console.error(e); }
         }
-        
-        if (!found) {
-            setDvfInfo("⚠️ Geen recente verkopen in de buurt.");
-        }
+        if (!found) setDvfInfo("⚠️ Geen recente data in de directe omgeving.");
         setLoading(false);
       };
       fetchPrices();
     }
-  }, [adresFields.lat, adresFields.lon]); // Trigger opnieuw als adres wijzigt
+  }, [adresFields.lat, adresFields.lon]);
+
+  // --- LOGICA VOOR DE LINKS (DE FIX) ---
+  
+  // 1. Bepaal de Recherche Cadastrale link
+  let rechercheLink = "https://recherchecadastrale.fr/cadastre"; // Fallback
+  let linkLabel = "📍 Open Kaart";
+
+  if (kadasterInfo?.id) {
+    // SCENARIO A: We hebben het ID gevonden (ideaal)
+    // We voegen 'couche=immobilier' toe zoals in je voorbeeld
+    rechercheLink = `https://recherchecadastrale.fr/cadastre/${kadasterInfo.id}?couche=immobilier`;
+    linkLabel = `📍 Perceel ${kadasterInfo.section}-${kadasterInfo.numero}`;
+  } else if (adresFields.insee) {
+    // SCENARIO B: Geen ID (punt op straat), maar we weten wel de GEMEENTE (INSEE)
+    // Dit is de fix die zorgt dat je niet heel Frankrijk ziet, maar de juiste stad
+    rechercheLink = `https://recherchecadastrale.fr/cadastre?commune=${adresFields.insee}&recherche=par_adresse`;
+    linkLabel = "📍 Zoek perceel op kaart";
+  }
 
   // --- BEREKENING ---
   const technischeWaarde = (Number(oppervlakte) || 0) * (Number(m2Prijs) || 0);
-  
   const kostenTotaal = 
     Object.keys(minderingChecked).reduce((s, k) => minderingChecked[k] ? s + Number(kosten[k]) : s, 0) +
     Object.keys(kostenChecklist).reduce((s, k) => checked[k] ? s + Number(kostenChecklist[k]) : s, 0);
@@ -259,18 +262,10 @@ function App() {
   const gecorrigeerdeMarktwaarde = technischeWaarde + marktCorrectie;
   const adviesBod = Math.max(0, gecorrigeerdeMarktwaarde - kostenTotaal);
 
-  // --- LINKS ---
+  // --- LINKS OVERIG ---
   const geoRisquesLink = adresFields.lat 
     ? `https://www.georisques.gouv.fr/mes-risques/connaitre-les-risques-pres-de-chez-moi?lat=${adresFields.lat}&lng=${adresFields.lon}`
     : "https://www.georisques.gouv.fr/";
-
-  const geoportailLink = adresFields.lat
-    ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=19&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes`
-    : "https://www.geoportail.gouv.fr/carte";
-    
-  const rechercheCadastraleLink = kadasterInfo?.id
-    ? `https://recherchecadastrale.fr/cadastre/${kadasterInfo.id}`
-    : "https://recherchecadastrale.fr/map";
 
   const dvfMapLink = "https://explore.data.gouv.fr/fr/immobilier?onglet=carte&filtre=tous";
 
@@ -310,7 +305,6 @@ function App() {
           <div className="grid">
             <div style={{ gridColumn: "1 / -1" }}>
               <label>Adres van het pand <BadgeVerplicht /></label>
-              {/* HIER WAS HET MOGELIJK MISGEGAAN: COMPONENT MOET HIER STAAN */}
               <AdresAutoComplete setAdresFields={setAdresFields} />
               
               {adresFields.adres && (
@@ -330,24 +324,23 @@ function App() {
                          <span style={{color: "#666"}}>Oppervlakte:</span><br/>
                          <b>{kadasterInfo.oppervlakte} m²</b>
                        </div>
-                       
-                       <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-                         <a href={rechercheCadastraleLink} target="_blank" style={{ 
-                           background: "#800000", color: "#fff", textDecoration: "none", textAlign: "center", 
-                           padding: "10px", borderRadius: "4px", fontWeight: "bold", fontSize: "0.95rem"
-                         }}>
-                           📍 Detailkaart
-                         </a>
-                         <a href={geoportailLink} target="_blank" className="btn-outline" style={{ textAlign: "center", padding: "10px" }}>
-                           🛰️ Geoportail
-                         </a>
-                       </div>
                     </div>
                   ) : (
-                    <div style={{ color: "#666", fontStyle: "italic" }}>
-                      {!kadasterLoading && "Geen specifiek perceel gevonden (punt ligt mogelijk op de weg)."}
+                    <div style={{ color: "#666", fontStyle: "italic", marginBottom: 10 }}>
+                      {!kadasterLoading && "Geen specifiek perceelnummer gevonden (adres ligt mogelijk op straatniveau). Gebruik de knop hieronder om het pand handmatig aan te klikken."}
                     </div>
                   )}
+
+                  {/* DE HERSTELDE KNOPPEN */}
+                  <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
+                     <a href={rechercheLink} target="_blank" style={{ 
+                       background: "#800000", color: "#fff", textDecoration: "none", textAlign: "center", 
+                       padding: "12px", borderRadius: "4px", fontWeight: "bold", fontSize: "1rem"
+                     }}>
+                       {linkLabel}
+                     </a>
+                  </div>
+
                 </div>
               )}
             </div>
