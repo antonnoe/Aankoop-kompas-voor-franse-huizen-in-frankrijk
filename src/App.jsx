@@ -182,22 +182,26 @@ function App() {
   const [kadasterInfo, setKadasterInfo] = useState(null); 
   const [kadasterLoading, setKadasterLoading] = useState(false);
 
-  // --- SLIMME ZOEKFUNCTIE (RECURSIEF) ---
-  const fetchPricesSmart = async (lat, lon, distances = [500, 1000, 3000, 5000]) => {
+  // --- SLIMME ZOEKFUNCTIE (RECURSIEF TOT 20KM) ---
+  const fetchPricesSmart = async (lat, lon) => {
+    // We proberen deze afstanden totdat we data hebben
+    const distances = [500, 1000, 3000, 5000, 10000, 20000]; 
+    
     setDvfLoading(true);
     setM2Prijs(""); 
+    setDvfInfo("Zoeken naar vergelijkbare huizen...");
     
     for (const dist of distances) {
-        setDvfInfo(`Zoeken binnen straal van ${dist}m...`);
         try {
+            // Haal data op
             const res = await fetch(`https://api.cquest.org/dvf?lat=${lat}&lon=${lon}&dist=${dist}`);
             const data = await res.json();
             
-            // Filter: Alleen huizen, echte verkopen, normale prijs
+            // Filter: Alleen huizen, echte verkopen > 10k euro
             const relevant = data.features.filter(f => 
                 f.properties.nature_mutation === "Vente" &&
                 f.properties.type_local === "Maison" &&
-                f.properties.valeur_fonciere > 10000 && // Filter garages/kleine dingen eruit
+                f.properties.valeur_fonciere > 10000 && 
                 f.properties.surface_reelle_bati > 0
             );
 
@@ -210,18 +214,21 @@ function App() {
                 const avg = Math.round(totalM2Price / relevant.length);
                 
                 setM2Prijs(avg);
-                setDvfInfo(`✅ Gevonden: ${relevant.length} verkopen (straal ${dist}m).`);
+                setDvfInfo(`✅ Gevonden: ${relevant.length} verkopen (straal ${dist/1000}km).`);
                 setDvfLoading(false);
                 return; // Stop de loop, we hebben prijs
+            } else {
+               // Update status bericht voor de gebruiker zodat ze zien dat hij nog zoekt
+               setDvfInfo(`Niets binnen ${dist}m, zoeken in ${distances[distances.indexOf(dist)+1] || 20000}m...`);
             }
         } catch (e) {
             console.error(e);
         }
-        // Niks gevonden? Loop gaat door naar volgende afstand...
+        // Wacht heel even om de API niet te spammen (optioneel, hier niet nodig)
     }
     
-    // Als we hier komen is er zelfs op 5km niks gevonden
-    setDvfInfo("❌ Geen vergelijkbare verkopen gevonden binnen 5km.");
+    // Als we hier komen is er zelfs op 20km niks gevonden
+    setDvfInfo("❌ Geen vergelijkbare verkopen gevonden binnen 20km.");
     setDvfLoading(false);
   };
 
@@ -518,7 +525,7 @@ function App() {
           </div>
           
           <p className="muted" style={{ fontSize: "0.9rem" }}>
-            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de automatisch berekende (of ingevulde) m²-prijs van €{m2Prijs || 0}.
+            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de m²-prijs van €{m2Prijs || 0}.
           </p>
         </section>
       )}
