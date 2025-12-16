@@ -177,78 +177,75 @@ function App() {
   const [m2Prijs, setM2Prijs] = useState(""); 
   const [dvfLoading, setDvfLoading] = useState(false);
   const [dvfInfo, setDvfInfo] = useState("");
-  const [debugInfo, setDebugInfo] = useState(""); 
   
   // Kadaster data
   const [kadasterInfo, setKadasterInfo] = useState(null); 
   const [kadasterLoading, setKadasterLoading] = useState(false);
 
-  // --- SLIMME ZOEKFUNCTIE (MET UITSCHIETER FILTER) ---
+  // --- SLIMME ZOEKFUNCTIE (AGRESSIEVE VERSIE) ---
   const fetchPricesSmart = async (lat, lon) => {
-    // We starten direct wat ruimer (1km) en gaan tot 20km (platteland logica)
-    const distances = [1000, 3000, 5000, 10000, 20000]; 
+    // We starten direct wat ruimer (1km) en gaan tot 20km
+    const distances = [500, 1000, 3000, 5000, 10000, 20000]; 
     
     setDvfLoading(true);
     setM2Prijs(""); 
     setDvfInfo("Zoeken naar vergelijkbare huizen...");
-    setDebugInfo("");
     
     for (const dist of distances) {
         try {
-            // Haal data op (api.cquest)
             const res = await fetch(`https://api.cquest.org/dvf?lat=${lat}&lon=${lon}&dist=${dist}`);
             const data = await res.json();
             
-            const rawCount = data.features ? data.features.length : 0;
-            
-            // STAP 1: Filteren op bruikbare huizen
-            const validHouses = data.features.filter(f => 
-                f.properties.nature_mutation === "Vente" && // Alleen koop
-                f.properties.type_local === "Maison" &&     // Alleen huizen
-                f.properties.valeur_fonciere > 15000 &&     // Geen garages/fouten
-                f.properties.surface_reelle_bati > 20       // Geen tuinhuisjes
+            // Filter: Vente, Maison, >10k prijs, >20m2 oppervlakte
+            const relevant = data.features.filter(f => 
+                f.properties.nature_mutation === "Vente" &&
+                f.properties.type_local === "Maison" &&
+                f.properties.valeur_fonciere > 10000 && 
+                f.properties.surface_reelle_bati > 20
             );
 
-            // Minimaal aantal huizen om statistisch iets te kunnen zeggen
-            if (validHouses.length >= 5) {
+            // LOGICA: Hebben we IETS gevonden?
+            if (relevant.length > 0) {
                 
-                // STAP 2: Bereken m2 prijs voor elk huis
-                let prices = validHouses.map(h => 
+                // Bereken m2 prijzen
+                let prices = relevant.map(h => 
                    h.properties.valeur_fonciere / h.properties.surface_reelle_bati
                 );
+                
+                let avg = 0;
+                let infoText = "";
 
-                // STAP 3: Sorteer van laag naar hoog
-                prices.sort((a, b) => a - b);
-
-                // STAP 4: Verwijder uitschieters (onderste en bovenste 20%)
-                // Dit filtert de "krotjes" en de "kastelen" eruit.
-                const trimCount = Math.floor(prices.length * 0.2); 
-                const cleanPrices = prices.slice(trimCount, prices.length - trimCount);
-
-                // STAP 5: Bereken gemiddelde van de "schone" lijst
-                const sum = cleanPrices.reduce((a, b) => a + b, 0);
-                const avg = Math.round(sum / cleanPrices.length);
+                // Situatie A: VEEL data (>= 5) -> We kunnen luxe doen en uitschieters filteren
+                if (relevant.length >= 5) {
+                    prices.sort((a, b) => a - b);
+                    const trimCount = Math.floor(prices.length * 0.2); 
+                    const cleanPrices = prices.slice(trimCount, prices.length - trimCount);
+                    const sum = cleanPrices.reduce((a, b) => a + b, 0);
+                    avg = Math.round(sum / cleanPrices.length);
+                    infoText = `✅ Gevonden: ${relevant.length} woningen (straal ${dist/1000}km).`;
+                } 
+                // Situatie B: WEINIG data (1-4) -> Pak gewoon alles wat we hebben
+                else {
+                    const sum = prices.reduce((a, b) => a + b, 0);
+                    avg = Math.round(sum / prices.length);
+                    infoText = `⚠️ Beperkte data: ${relevant.length} woning(en) in straal ${dist/1000}km.`;
+                }
                 
                 setM2Prijs(avg);
-                setDvfInfo(`✅ Gemiddelde o.b.v. ${cleanPrices.length} vergelijkbare woningen.`);
-                setDebugInfo(`Straal ${dist/1000}km. Totaal ${validHouses.length} huizen gevonden. Uitschieters verwijderd voor berekening.`);
-                
+                setDvfInfo(infoText);
                 setDvfLoading(false);
-                return; // Stop de loop, we hebben een goed cijfer
-            } else {
-               // Update status bericht
-               if (dist < 20000) {
-                 setDvfInfo(`Te weinig data (<5) binnen ${dist/1000}km, zoekgebied vergroten...`);
-               }
+                return; // Gevonden! Stop zoeken.
             }
+            
+            // Niks gevonden in deze straal? Op naar de volgende...
+            setDvfInfo(`Niets binnen ${dist}m, zoeken in ${distances[distances.indexOf(dist)+1] || 20000}m...`);
+
         } catch (e) {
             console.error("Fetch error:", e);
         }
     }
     
-    // Als we hier komen is er zelfs op 20km niks betrouwbaars gevonden
-    setDvfInfo("❌ Geen betrouwbare m²-prijs gevonden (te weinig verkopen).");
-    setDebugInfo("Probeer de handmatige links hieronder.");
+    setDvfInfo("❌ Helaas, zelfs binnen 20km geen vergelijkbare data.");
     setDvfLoading(false);
   };
 
@@ -392,19 +389,13 @@ function App() {
                  {dvfLoading && <span style={{ position: "absolute", right: 10, top: 10 }}>⏳</span>}
                </div>
                
-               {/* STATUS & DEBUG INFO */}
                <small style={{ display: "block", marginTop: 4, color: "#666" }}>
                  {dvfInfo ? (
-                    <span style={{ color: dvfInfo.includes("Gevonden") ? "green" : "#e08b00", fontWeight: "bold" }}>
+                    <span style={{ color: dvfInfo.includes("Gevonden") ? "green" : (dvfInfo.includes("Beperkte") ? "orange" : "red"), fontWeight: "bold" }}>
                         {dvfInfo}
                     </span>
                  ) : "Kies een adres om te starten."}
                </small>
-               {debugInfo && (
-                  <small style={{ display: "block", marginTop: 2, color: "#999", fontSize: "0.8em" }}>
-                    Details: {debugInfo}
-                  </small>
-               )}
                
                <small style={{ display: "block", marginTop: 6, color: "#999" }}>
                  Controleer handmatig: 
@@ -558,7 +549,7 @@ function App() {
           </div>
           
           <p className="muted" style={{ fontSize: "0.9rem" }}>
-            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de m²-prijs van €{m2Prijs || 0}.
+            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de automatisch berekende (of ingevulde) m²-prijs van €{m2Prijs || 0}.
           </p>
         </section>
       )}
