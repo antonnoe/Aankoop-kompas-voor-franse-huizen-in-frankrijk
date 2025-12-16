@@ -177,16 +177,16 @@ function App() {
   const [m2Prijs, setM2Prijs] = useState(""); 
   const [dvfLoading, setDvfLoading] = useState(false);
   const [dvfInfo, setDvfInfo] = useState("");
-  const [debugInfo, setDebugInfo] = useState(""); // Voor diagnose
+  const [debugInfo, setDebugInfo] = useState(""); 
   
   // Kadaster data
   const [kadasterInfo, setKadasterInfo] = useState(null); 
   const [kadasterLoading, setKadasterLoading] = useState(false);
 
-  // --- SLIMME ZOEKFUNCTIE (ROBUUSTE VERSIE) ---
+  // --- SLIMME ZOEKFUNCTIE (MET UITSCHIETER FILTER) ---
   const fetchPricesSmart = async (lat, lon) => {
-    // We starten direct wat ruimer (1km) en gaan tot 15km
-    const distances = [1000, 3000, 5000, 10000, 15000]; 
+    // We starten direct wat ruimer (1km) en gaan tot 20km (platteland logica)
+    const distances = [1000, 3000, 5000, 10000, 20000]; 
     
     setDvfLoading(true);
     setM2Prijs(""); 
@@ -195,51 +195,58 @@ function App() {
     
     for (const dist of distances) {
         try {
-            // Haal data op (api.cquest is de beste bron)
+            // Haal data op (api.cquest)
             const res = await fetch(`https://api.cquest.org/dvf?lat=${lat}&lon=${lon}&dist=${dist}`);
             const data = await res.json();
             
-            // Raw count voor debug
             const rawCount = data.features ? data.features.length : 0;
             
-            // Soepeler filter:
-            // 1. nature_mutation moet 'Vente' zijn (Verkoop)
-            // 2. type_local moet 'Maison' zijn
-            // 3. Prijs > 10.000 (filtert garages/parkeerplaatsen)
-            // 4. Oppervlakte > 10m2 (filtert fouten)
-            const relevant = data.features.filter(f => 
-                f.properties.nature_mutation === "Vente" &&
-                f.properties.type_local === "Maison" &&
-                f.properties.valeur_fonciere > 10000 && 
-                f.properties.surface_reelle_bati > 10
+            // STAP 1: Filteren op bruikbare huizen
+            const validHouses = data.features.filter(f => 
+                f.properties.nature_mutation === "Vente" && // Alleen koop
+                f.properties.type_local === "Maison" &&     // Alleen huizen
+                f.properties.valeur_fonciere > 15000 &&     // Geen garages/fouten
+                f.properties.surface_reelle_bati > 20       // Geen tuinhuisjes
             );
 
-            if (relevant.length > 3) { // Minimaal 3 huizen nodig voor een betrouwbaar gemiddelde
-                // GEVONDEN!
-                let totalM2Price = 0;
-                relevant.forEach(item => {
-                    const price = item.properties.valeur_fonciere;
-                    const size = item.properties.surface_reelle_bati;
-                    totalM2Price += (price / size);
-                });
-                const avg = Math.round(totalM2Price / relevant.length);
+            // Minimaal aantal huizen om statistisch iets te kunnen zeggen
+            if (validHouses.length >= 5) {
+                
+                // STAP 2: Bereken m2 prijs voor elk huis
+                let prices = validHouses.map(h => 
+                   h.properties.valeur_fonciere / h.properties.surface_reelle_bati
+                );
+
+                // STAP 3: Sorteer van laag naar hoog
+                prices.sort((a, b) => a - b);
+
+                // STAP 4: Verwijder uitschieters (onderste en bovenste 20%)
+                // Dit filtert de "krotjes" en de "kastelen" eruit.
+                const trimCount = Math.floor(prices.length * 0.2); 
+                const cleanPrices = prices.slice(trimCount, prices.length - trimCount);
+
+                // STAP 5: Bereken gemiddelde van de "schone" lijst
+                const sum = cleanPrices.reduce((a, b) => a + b, 0);
+                const avg = Math.round(sum / cleanPrices.length);
                 
                 setM2Prijs(avg);
-                setDvfInfo(`✅ Gevonden: ${relevant.length} huizen (straal ${dist/1000}km).`);
-                setDebugInfo(""); // Clear debug bij succes
+                setDvfInfo(`✅ Gemiddelde o.b.v. ${cleanPrices.length} vergelijkbare woningen.`);
+                setDebugInfo(`Straal ${dist/1000}km. Totaal ${validHouses.length} huizen gevonden. Uitschieters verwijderd voor berekening.`);
+                
                 setDvfLoading(false);
-                return; // Stop de loop, we hebben prijs
+                return; // Stop de loop, we hebben een goed cijfer
             } else {
                // Update status bericht
-               setDebugInfo(`Straal ${dist}m: ${rawCount} items in database, waarvan ${relevant.length} bruikbare huizen.`);
-               setDvfInfo(`Te weinig data binnen ${dist}m, zoeken in ${distances[distances.indexOf(dist)+1] || "..."}m...`);
+               if (dist < 20000) {
+                 setDvfInfo(`Te weinig data (<5) binnen ${dist/1000}km, zoekgebied vergroten...`);
+               }
             }
         } catch (e) {
             console.error("Fetch error:", e);
         }
     }
     
-    // Als we hier komen is er zelfs op 15km niks betrouwbaars gevonden
+    // Als we hier komen is er zelfs op 20km niks betrouwbaars gevonden
     setDvfInfo("❌ Geen betrouwbare m²-prijs gevonden (te weinig verkopen).");
     setDebugInfo("Probeer de handmatige links hieronder.");
     setDvfLoading(false);
@@ -395,7 +402,7 @@ function App() {
                </small>
                {debugInfo && (
                   <small style={{ display: "block", marginTop: 2, color: "#999", fontSize: "0.8em" }}>
-                    Debug: {debugInfo}
+                    Details: {debugInfo}
                   </small>
                )}
                
