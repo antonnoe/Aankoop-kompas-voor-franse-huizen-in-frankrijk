@@ -117,11 +117,17 @@ function AdresAutoComplete({ setAdresFields }) {
   function handleSelect(suggestion) {
     setQuery(suggestion.properties.label);
     setSuggestions([]);
+    
+    // We slaan nu ook de coördinaten op (lat/lon) voor de DVF check
+    const [lon, lat] = suggestion.geometry.coordinates;
+    
     setAdresFields({
       adres: suggestion.properties.label,
       postcode: suggestion.properties.postcode,
       gemeente: suggestion.properties.city,
-      insee: suggestion.properties.citycode, // Wel opslaan, niet tonen
+      insee: suggestion.properties.citycode, 
+      lat: lat,
+      lon: lon
     });
   }
 
@@ -168,13 +174,61 @@ function App() {
   const [soortBouw, setSoortBouw] = useState("");
   const [makelaar, setMakelaar] = useState("");
   
+  // Nieuw: Automatische m2 prijs logica
+  const [m2Prijs, setM2Prijs] = useState(""); 
+  const [dvfLoading, setDvfLoading] = useState(false);
+  const [dvfInfo, setDvfInfo] = useState(""); // Tekst met aantal gevonden huizen
+
+  // Effect: Als adres (lat/lon) wijzigt, haal DVF data op
+  useEffect(() => {
+    if (adresFields.lat && adresFields.lon) {
+      setDvfLoading(true);
+      setDvfInfo("Prijzen in de buurt ophalen...");
+      
+      // We zoeken in een straal van 500m
+      fetch(`https://api.cquest.org/dvf?lat=${adresFields.lat}&lon=${adresFields.lon}&dist=500`)
+        .then(res => res.json())
+        .then(data => {
+          // Filter alleen op huizen (maisons) en echte verkopen
+          const relevant = data.features.filter(f => 
+            f.properties.nature_mutation === "Vente" &&
+            f.properties.type_local === "Maison" &&
+            f.properties.valeur_fonciere > 0 &&
+            f.properties.surface_reelle_bati > 0
+          );
+
+          if (relevant.length > 0) {
+            // Bereken gemiddelde m2 prijs
+            let totalM2Price = 0;
+            relevant.forEach(item => {
+              const price = item.properties.valeur_fonciere;
+              const size = item.properties.surface_reelle_bati;
+              totalM2Price += (price / size);
+            });
+            const average = Math.round(totalM2Price / relevant.length);
+            
+            setM2Prijs(average);
+            setDvfInfo(`Gevonden: ${relevant.length} verkopen in straal van 500m.`);
+          } else {
+            setDvfInfo("Geen recente verkopen gevonden in de directe omgeving.");
+            setM2Prijs(""); // Reset of laat leeg voor handmatige invoer
+          }
+          setDvfLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setDvfInfo("Kon prijzen niet automatisch ophalen.");
+          setDvfLoading(false);
+        });
+    }
+  }, [adresFields.lat, adresFields.lon]);
+
   // Lasten
   const [taxeF, setTaxeF] = useState("");
   const [taxeH, setTaxeH] = useState("");
 
   // Checklist State
   const checkboxNames = checklistGroepen.flatMap(g => g.items).map(i => i.name);
-  const checklistMeta = Object.fromEntries(checklistGroepen.flatMap(g => g.items).map(i => [i.name, i]));
   
   const [checked, setChecked] = useState(
     checkboxNames.reduce((acc, name) => ({ ...acc, [name]: false }), {})
@@ -194,8 +248,7 @@ function App() {
   const handleKostenChange = (e, name) => setKosten({ ...kosten, [name]: e.target.value });
 
   // Berekeningen
-  const m2Prijs = 1300; // Dummy marktwaarde m2
-  const marktwaarde = (Number(oppervlakte) || 0) * m2Prijs;
+  const marktwaarde = (Number(oppervlakte) || 0) * (Number(m2Prijs) || 0);
   
   const kostenHoofdTotaal = Object.keys(minderingChecked).reduce((sum, key) => 
     minderingChecked[key] ? sum + (Number(kosten[key]) || 0) : sum, 0
@@ -253,6 +306,41 @@ function App() {
                <label>{mandatory("Woonoppervlakte (m²)")}</label>
                <input type="number" value={oppervlakte} onChange={e => setOppervlakte(e.target.value)} />
             </div>
+            
+            {/* --- AUTOMATISCHE M2 PRIJS SECTIE --- */}
+            <div>
+               <label>{important("Gemiddelde m² prijs in regio")}</label>
+               <div style={{ position: "relative" }}>
+                 <input 
+                   type="number" 
+                   placeholder="Wordt berekend..."
+                   value={m2Prijs} 
+                   onChange={e => setM2Prijs(e.target.value)} 
+                   style={{ 
+                     border: "2px solid #800000", 
+                     background: dvfLoading ? "#f0f0f0" : "#fff" 
+                   }}
+                 />
+                 {dvfLoading && <span style={{ position: "absolute", right: 10, top: 10 }}>⏳</span>}
+               </div>
+               
+               <small style={{ display: "block", marginTop: 4, color: "#666" }}>
+                 {dvfInfo ? (
+                   <span style={{ color: dvfInfo.includes("Gevonden") ? "green" : "orange", fontWeight: "bold" }}>
+                     {dvfInfo}
+                   </span>
+                 ) : (
+                   "Kies een adres om prijzen op te halen."
+                 )}
+               </small>
+               
+               <small style={{ display: "block", marginTop: 2, color: "#999" }}>
+                 Of check handmatig: 
+                 <a href="https://app.dvf.etalab.gouv.fr/" target="_blank" style={{marginLeft: 5, color: "#800000"}}>DVF</a> | 
+                 <a href="https://www.meilleursagents.com/prix-immobilier/" target="_blank" style={{marginLeft: 5, color: "#800000"}}>MeilleursAgents</a>
+               </small>
+            </div>
+            
             <div>
                <label>{important("Perceeloppervlakte (m²)")}</label>
                <input type="number" value={perceel} onChange={e => setPerceel(e.target.value)} />
@@ -260,13 +348,6 @@ function App() {
             <div>
                <label>Bouwjaar</label>
                <input type="number" value={bouwjaar} onChange={e => setBouwjaar(e.target.value)} />
-            </div>
-            <div>
-               <label>Soort bouw</label>
-               <select value={soortBouw} onChange={e => setSoortBouw(e.target.value)}>
-                 <option value="">Kies type...</option>
-                 {bouwtypes.map(t => <option key={t} value={t}>{t}</option>)}
-               </select>
             </div>
           </div>
 
@@ -397,7 +478,7 @@ function App() {
           </div>
           
           <p className="muted" style={{ fontSize: "0.9rem" }}>
-            * Dit is een indicatie. De marktwaarde is gebaseerd op een gemiddelde van €{m2Prijs}/m² en houdt geen rekening met specifieke locatie kenmerken.
+            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de automatisch berekende (of ingevulde) m²-prijs van €{m2Prijs || 0}.
           </p>
         </section>
       )}
