@@ -94,7 +94,7 @@ function AdresAutoComplete({ setAdresFields }) {
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="🔍 Zoek adres (bijv. 10 Rue de l'Eglise...)"
+        placeholder="🔍 Zoek adres (bijv. 22 Rue de Sehen...)"
         style={{ width: "100%", padding: "12px", border: "1px solid #ccc", borderRadius: "6px", fontSize: "1rem" }}
       />
       {suggestions.length > 0 && (
@@ -134,7 +134,7 @@ function App() {
   const [dvfInfo, setDvfInfo] = useState("");
   const [loading, setLoading] = useState(false);
   
-  // Kadaster Data (De Tegel!)
+  // Kadaster Data
   const [kadasterInfo, setKadasterInfo] = useState(null);
   const [kadasterLoading, setKadasterLoading] = useState(false);
 
@@ -159,14 +159,20 @@ function App() {
       setLoading(true);
       setKadasterLoading(true);
       
-      // 1. Kadaster (IGN) - Haalt perceelnummer, sectie, grootte EN ID op
-      fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${adresFields.lon},${adresFields.lat}]}`)
+      // 1. Kadaster (IGN) - DE ROBUUSTE VERSIE
+      // We gebruiken encodeURIComponent om zeker te weten dat de JSON geom parameter goed aankomt
+      const geomParams = encodeURIComponent(JSON.stringify({
+        type: "Point",
+        coordinates: [adresFields.lon, adresFields.lat]
+      }));
+      
+      fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom=${geomParams}`)
         .then(res => res.json())
         .then(data => {
           if (data?.features?.length > 0) {
             const p = data.features[0].properties;
             setKadasterInfo({
-              id: p.id, // Het unieke ID (bv. 625850000B0062) voor de link
+              id: p.id, // Het unieke ID (bv. 625850000B0062)
               section: p.section,
               numero: p.numero,
               oppervlakte: p.contenance
@@ -177,7 +183,10 @@ function App() {
           }
           setKadasterLoading(false);
         })
-        .catch(() => setKadasterLoading(false));
+        .catch((err) => {
+          console.error(err);
+          setKadasterLoading(false);
+        });
 
       // 2. Slimme Prijszoeker (DVF)
       const fetchPrices = async () => {
@@ -198,10 +207,9 @@ function App() {
             );
 
             if (relevant.length > 0) {
-              // Bereken m2 prijzen
               let prices = relevant.map(h => h.properties.valeur_fonciere / h.properties.surface_reelle_bati);
               
-              // Filter uitschieters als we genoeg data hebben
+              // Filter uitschieters als we genoeg data hebben (>=5)
               if (relevant.length >= 5) {
                 prices.sort((a, b) => a - b);
                 const trim = Math.floor(prices.length * 0.2);
@@ -239,17 +247,15 @@ function App() {
     ? `https://www.georisques.gouv.fr/mes-risques/connaitre-les-risques-pres-de-chez-moi?lat=${adresFields.lat}&lng=${adresFields.lon}`
     : "https://www.georisques.gouv.fr/";
 
-  // Link naar Geoportail (GPS)
   const geoportailLink = adresFields.lat
     ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=19&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes`
     : "https://www.geoportail.gouv.fr/carte";
     
-  // Link naar RechercheCadastrale (Perceel ID)
+  // De WOW-link
   const rechercheCadastraleLink = kadasterInfo?.id
     ? `https://recherchecadastrale.fr/cadastre/${kadasterInfo.id}`
-    : (adresFields.insee ? `https://recherchecadastrale.fr/cadastre?commune=${adresFields.insee}&recherche=par_adresse` : "https://recherchecadastrale.fr/cadastre");
+    : "https://recherchecadastrale.fr/cadastre";
 
-  // De nieuwe data.gouv kaart (voor prijzen)
   const dvfMapLink = "https://explore.data.gouv.fr/fr/immobilier?onglet=carte&filtre=tous";
 
   // --- HANDLERS ---
@@ -290,12 +296,12 @@ function App() {
               <label>Adres van het pand <BadgeVerplicht /></label>
               <AdresAutoComplete setAdresFields={setAdresFields} />
               
-              {/* --- DE KADASTER TEGEL (NU MET 2 KNOPPEN) --- */}
+              {/* --- DE KADASTER TEGEL --- */}
               {adresFields.adres && (
                 <div style={{ marginTop: 10, padding: 15, background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 6 }}>
                   <div style={{ fontWeight: "bold", color: "#800000", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
                     <span>🏛️ Officieel Kadaster</span>
-                    {kadasterLoading && <span>...</span>}
+                    {kadasterLoading && <span>🔍 Zoeken...</span>}
                   </div>
                   
                   {kadasterInfo ? (
@@ -313,18 +319,18 @@ function App() {
                        <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
                          <a href={rechercheCadastraleLink} target="_blank" style={{ 
                            background: "#800000", color: "#fff", textDecoration: "none", textAlign: "center", 
-                           padding: "8px", borderRadius: "4px", fontWeight: "bold"
+                           padding: "10px", borderRadius: "4px", fontWeight: "bold", fontSize: "0.95rem"
                          }}>
                            📍 Bekijk op RechercheCadastrale.fr
                          </a>
-                         <a href={geoportailLink} target="_blank" className="btn-outline" style={{ textAlign: "center" }}>
+                         <a href={geoportailLink} target="_blank" className="btn-outline" style={{ textAlign: "center", padding: "10px" }}>
                            🛰️ Bekijk op Geoportail
                          </a>
                        </div>
                     </div>
                   ) : (
                     <div style={{ color: "#666", fontStyle: "italic" }}>
-                      Nog geen kadasterdata beschikbaar. Selecteer een adres.
+                      {!kadasterLoading && "Geen kadasterdata gevonden op deze exacte locatie. Probeer een ander huisnummer."}
                     </div>
                   )}
                 </div>
@@ -513,7 +519,7 @@ function App() {
         input[type="number"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 4px; font-size: 1rem; }
         .btn-outline { 
           display: inline-block; text-decoration: none; color: #555; border: 1px solid #ccc; 
-          padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
+          padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
         }
         .btn-outline:hover { background: #f0f0f0; border-color: #999; }
         .muted { color: #666; font-size: 0.9rem; margin-top: -10px; margin-bottom: 20px; }
