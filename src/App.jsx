@@ -101,7 +101,7 @@ const Tabs = ({ tab, setTab, list }) => (
   </div>
 );
 
-// --- Adres Autocomplete (Versimpeld) ---
+// --- Adres Autocomplete ---
 function AdresAutoComplete({ setAdresFields }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -118,7 +118,7 @@ function AdresAutoComplete({ setAdresFields }) {
     setQuery(suggestion.properties.label);
     setSuggestions([]);
     
-    // We slaan nu ook de coördinaten op (lat/lon) voor de DVF check
+    // Sla coördinaten op voor DVF én Kadaster check
     const [lon, lat] = suggestion.geometry.coordinates;
     
     setAdresFields({
@@ -137,7 +137,7 @@ function AdresAutoComplete({ setAdresFields }) {
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Typ adres (bijv. 12 Rue de l'Eglise...)"
+        placeholder="Typ adres (bijv. 22 Rue de Sehen...)"
         style={{ width: "100%", padding: "10px", border: "1px solid #ccc", borderRadius: "4px" }}
       />
       {suggestions.length > 0 && (
@@ -172,24 +172,25 @@ function App() {
   const [perceel, setPerceel] = useState("");
   const [bouwjaar, setBouwjaar] = useState("");
   const [soortBouw, setSoortBouw] = useState("");
-  const [makelaar, setMakelaar] = useState("");
   
-  // Nieuw: Automatische m2 prijs logica
+  // Automatische data
   const [m2Prijs, setM2Prijs] = useState(""); 
   const [dvfLoading, setDvfLoading] = useState(false);
-  const [dvfInfo, setDvfInfo] = useState(""); // Tekst met aantal gevonden huizen
+  const [dvfInfo, setDvfInfo] = useState("");
+  
+  // Nieuw: Kadaster data
+  const [kadasterInfo, setKadasterInfo] = useState(null); // { section: "B", numero: "62", opp: 1234 }
+  const [kadasterLoading, setKadasterLoading] = useState(false);
 
-  // Effect: Als adres (lat/lon) wijzigt, haal DVF data op
+  // --- EFFECT: Haal DVF én Kadaster op bij adreswijziging ---
   useEffect(() => {
     if (adresFields.lat && adresFields.lon) {
+      // 1. DVF Prijzen
       setDvfLoading(true);
-      setDvfInfo("Prijzen in de buurt ophalen...");
-      
-      // We zoeken in een straal van 500m
+      setDvfInfo("Prijzen ophalen...");
       fetch(`https://api.cquest.org/dvf?lat=${adresFields.lat}&lon=${adresFields.lon}&dist=500`)
         .then(res => res.json())
         .then(data => {
-          // Filter alleen op huizen (maisons) en echte verkopen
           const relevant = data.features.filter(f => 
             f.properties.nature_mutation === "Vente" &&
             f.properties.type_local === "Maison" &&
@@ -198,28 +199,46 @@ function App() {
           );
 
           if (relevant.length > 0) {
-            // Bereken gemiddelde m2 prijs
             let totalM2Price = 0;
             relevant.forEach(item => {
-              const price = item.properties.valeur_fonciere;
-              const size = item.properties.surface_reelle_bati;
-              totalM2Price += (price / size);
+              totalM2Price += (item.properties.valeur_fonciere / item.properties.surface_reelle_bati);
             });
-            const average = Math.round(totalM2Price / relevant.length);
-            
-            setM2Prijs(average);
-            setDvfInfo(`Gevonden: ${relevant.length} verkopen in straal van 500m.`);
+            setM2Prijs(Math.round(totalM2Price / relevant.length));
+            setDvfInfo(`Gevonden: ${relevant.length} verkopen in de buurt.`);
           } else {
-            setDvfInfo("Geen recente verkopen gevonden in de directe omgeving.");
-            setM2Prijs(""); // Reset of laat leeg voor handmatige invoer
+            setDvfInfo("Geen verkopen in straal van 500m.");
+            setM2Prijs(""); 
           }
           setDvfLoading(false);
         })
+        .catch(() => { setDvfInfo("Fout bij ophalen DVF."); setDvfLoading(false); });
+
+      // 2. Kadaster Perceel (IGN API)
+      setKadasterLoading(true);
+      const ignUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${adresFields.lon},${adresFields.lat}]}`;
+      
+      fetch(ignUrl)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.features && data.features.length > 0) {
+            const p = data.features[0].properties;
+            setKadasterInfo({
+              section: p.section,
+              numero: p.numero,
+              oppervlakte: p.contenance // in m2
+            });
+            // Vul automatisch perceelgrootte in als die leeg is
+            if (!perceel) setPerceel(p.contenance);
+          } else {
+            setKadasterInfo(null);
+          }
+          setKadasterLoading(false);
+        })
         .catch(err => {
-          console.error(err);
-          setDvfInfo("Kon prijzen niet automatisch ophalen.");
-          setDvfLoading(false);
+          console.error("Kadaster API fout", err);
+          setKadasterLoading(false);
         });
+        
     }
   }, [adresFields.lat, adresFields.lon]);
 
@@ -229,12 +248,10 @@ function App() {
 
   // Checklist State
   const checkboxNames = checklistGroepen.flatMap(g => g.items).map(i => i.name);
-  
   const [checked, setChecked] = useState(
     checkboxNames.reduce((acc, name) => ({ ...acc, [name]: false }), {})
   );
   const [kostenChecklist, setKostenChecklist] = useState({});
-  
   const handleCheck = (e) => setChecked({ ...checked, [e.target.name]: e.target.checked });
   const handleKostenChecklistChange = (e, name) => setKostenChecklist({ ...kostenChecklist, [name]: e.target.value });
 
@@ -243,26 +260,27 @@ function App() {
   const [kosten, setKosten] = useState(
     kostenMinderingItems.reduce((acc, i) => ({ ...acc, [i.stateName]: i.default }), {})
   );
-  
   const handleMinderingCheck = (e) => setMinderingChecked({ ...minderingChecked, [e.target.name]: e.target.checked });
   const handleKostenChange = (e, name) => setKosten({ ...kosten, [name]: e.target.value });
 
   // Berekeningen
   const marktwaarde = (Number(oppervlakte) || 0) * (Number(m2Prijs) || 0);
-  
   const kostenHoofdTotaal = Object.keys(minderingChecked).reduce((sum, key) => 
     minderingChecked[key] ? sum + (Number(kosten[key]) || 0) : sum, 0
   );
-  
   const kostenHerstelTotaal = Object.keys(kostenChecklist).reduce((sum, key) => 
     checked[key] ? sum + (Number(kostenChecklist[key]) || 0) : sum, 0
   );
-
   const totaleKosten = kostenHoofdTotaal + kostenHerstelTotaal;
   const adviesBod = Math.max(0, marktwaarde - totaleKosten);
 
   // Links
   const georisquesUrl = adresFields.insee ? `https://www.georisques.gouv.fr/cartographie?code_commune=${adresFields.insee}` : "https://www.georisques.gouv.fr/";
+  
+  // Kadaster link genereren (recherchecadastrale stijl)
+  // Format vaak: prefix(3) + insee(3) + 000 + section(2) + numero(4)
+  // Maar we gebruiken een simpele directe link naar geoportail die betrouwbaarder is met coördinaten.
+  const geoportailUrl = adresFields.lat ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=19&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes` : "https://www.geoportail.gouv.fr/carte";
 
   return (
     <div className="container">
@@ -292,12 +310,28 @@ function App() {
             <div>
               <label>{mandatory("Adres")}</label>
               <AdresAutoComplete setAdresFields={setAdresFields} />
+              
+              {/* --- KADASTER INFORMATIE BLOK --- */}
               {adresFields.adres && (
-                <div style={{ marginTop: 5, color: "green", fontSize: "0.9em" }}>
-                  📍 Geselecteerd: {adresFields.adres}
+                <div style={{ marginTop: 10, padding: 10, background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 4 }}>
+                  <div style={{ fontWeight: "bold", color: "#800000", marginBottom: 4 }}>
+                    🏛️ Kadaster Info {kadasterLoading && "..."}
+                  </div>
+                  {kadasterInfo ? (
+                    <div style={{ fontSize: "0.9rem" }}>
+                      <div><b>Perceel:</b> Sectie {kadasterInfo.section} nr. {kadasterInfo.numero}</div>
+                      <div><b>Oppervlakte:</b> {kadasterInfo.oppervlakte} m² (officieel)</div>
+                      <a href={geoportailUrl} target="_blank" style={{ color: "#000", textDecoration: "underline", display: "block", marginTop: 5 }}>
+                        Bekijk kaart op Geoportail ↗
+                      </a>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: "0.8rem" }}>Nog geen kadasterdata gevonden (of laadt nog).</span>
+                  )}
                 </div>
               )}
             </div>
+
             <div>
                <label>{mandatory("Vraagprijs (€)")}</label>
                <input type="number" value={vraagprijs} onChange={e => setVraagprijs(e.target.value)} />
@@ -309,41 +343,32 @@ function App() {
             
             {/* --- AUTOMATISCHE M2 PRIJS SECTIE --- */}
             <div>
-               <label>{important("Gemiddelde m² prijs in regio")}</label>
+               <label>{important("Marktprijs m² (Regio)")}</label>
                <div style={{ position: "relative" }}>
                  <input 
                    type="number" 
-                   placeholder="Wordt berekend..."
                    value={m2Prijs} 
                    onChange={e => setM2Prijs(e.target.value)} 
-                   style={{ 
-                     border: "2px solid #800000", 
-                     background: dvfLoading ? "#f0f0f0" : "#fff" 
-                   }}
+                   style={{ border: "2px solid #800000", background: dvfLoading ? "#f0f0f0" : "#fff" }}
                  />
                  {dvfLoading && <span style={{ position: "absolute", right: 10, top: 10 }}>⏳</span>}
                </div>
-               
                <small style={{ display: "block", marginTop: 4, color: "#666" }}>
-                 {dvfInfo ? (
-                   <span style={{ color: dvfInfo.includes("Gevonden") ? "green" : "orange", fontWeight: "bold" }}>
-                     {dvfInfo}
-                   </span>
-                 ) : (
-                   "Kies een adres om prijzen op te halen."
-                 )}
-               </small>
-               
-               <small style={{ display: "block", marginTop: 2, color: "#999" }}>
-                 Of check handmatig: 
-                 <a href="https://app.dvf.etalab.gouv.fr/" target="_blank" style={{marginLeft: 5, color: "#800000"}}>DVF</a> | 
-                 <a href="https://www.meilleursagents.com/prix-immobilier/" target="_blank" style={{marginLeft: 5, color: "#800000"}}>MeilleursAgents</a>
+                 {dvfInfo}
                </small>
             </div>
             
             <div>
                <label>{important("Perceeloppervlakte (m²)")}</label>
-               <input type="number" value={perceel} onChange={e => setPerceel(e.target.value)} />
+               <input 
+                  type="number" 
+                  value={perceel} 
+                  onChange={e => setPerceel(e.target.value)} 
+                  placeholder={kadasterInfo ? kadasterInfo.oppervlakte : ""}
+               />
+               {kadasterInfo && (
+                 <small style={{ color: "green" }}>✓ Automatisch ingevuld via Kadaster</small>
+               )}
             </div>
             <div>
                <label>Bouwjaar</label>
@@ -365,7 +390,7 @@ function App() {
               <label>Externe bronnen</label>
               <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
                 <a href={georisquesUrl} target="_blank" className="btn" style={{ fontSize: "0.9rem" }}>
-                  ⚠️ Check Risico's (Georisques)
+                  ⚠️ Check Risico's
                 </a>
                 <a href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" className="btn" style={{ fontSize: "0.9rem", background: "#666" }}>
                   🗺️ Bestemmingsplan
@@ -478,7 +503,7 @@ function App() {
           </div>
           
           <p className="muted" style={{ fontSize: "0.9rem" }}>
-            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de automatisch berekende (of ingevulde) m²-prijs van €{m2Prijs || 0}.
+            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de m²-prijs van €{m2Prijs || 0}.
           </p>
         </section>
       )}
