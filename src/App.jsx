@@ -159,13 +159,14 @@ function App() {
       setLoading(true);
       setKadasterLoading(true);
       
-      // 1. Kadaster (IGN) - Haalt perceelnummer, sectie en grootte op
+      // 1. Kadaster (IGN) - Haalt perceelnummer, sectie, grootte EN ID op
       fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${adresFields.lon},${adresFields.lat}]}`)
         .then(res => res.json())
         .then(data => {
           if (data?.features?.length > 0) {
             const p = data.features[0].properties;
             setKadasterInfo({
+              id: p.id, // Het unieke ID (bv. 625850000B0062) voor de link
               section: p.section,
               numero: p.numero,
               oppervlakte: p.contenance
@@ -238,12 +239,17 @@ function App() {
     ? `https://www.georisques.gouv.fr/mes-risques/connaitre-les-risques-pres-de-chez-moi?lat=${adresFields.lat}&lng=${adresFields.lon}`
     : "https://www.georisques.gouv.fr/";
 
-  // Directe link naar Geoportail Perceelkaart (Zoom level 18)
+  // Link naar Geoportail (GPS)
   const geoportailLink = adresFields.lat
-    ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=18&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes`
+    ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=19&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes`
     : "https://www.geoportail.gouv.fr/carte";
     
-  // De nieuwe, betere kaart
+  // Link naar RechercheCadastrale (Perceel ID)
+  const rechercheCadastraleLink = kadasterInfo?.id
+    ? `https://recherchecadastrale.fr/cadastre/${kadasterInfo.id}`
+    : (adresFields.insee ? `https://recherchecadastrale.fr/cadastre?commune=${adresFields.insee}&recherche=par_adresse` : "https://recherchecadastrale.fr/cadastre");
+
+  // De nieuwe data.gouv kaart (voor prijzen)
   const dvfMapLink = "https://explore.data.gouv.fr/fr/immobilier?onglet=carte&filtre=tous";
 
   // --- HANDLERS ---
@@ -284,7 +290,7 @@ function App() {
               <label>Adres van het pand <BadgeVerplicht /></label>
               <AdresAutoComplete setAdresFields={setAdresFields} />
               
-              {/* --- DE KADASTER TEGEL (TERUG VAN WEGGEWEEST) --- */}
+              {/* --- DE KADASTER TEGEL (NU MET 2 KNOPPEN) --- */}
               {adresFields.adres && (
                 <div style={{ marginTop: 10, padding: 15, background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 6 }}>
                   <div style={{ fontWeight: "bold", color: "#800000", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
@@ -302,9 +308,17 @@ function App() {
                          <span style={{color: "#666"}}>Oppervlakte:</span><br/>
                          <b>{kadasterInfo.oppervlakte} m²</b>
                        </div>
-                       <div style={{ gridColumn: "1 / -1", marginTop: 5 }}>
-                         <a href={geoportailLink} target="_blank" className="btn-outline" style={{width: "100%", textAlign: "center", display: "block"}}>
-                           📍 Bekijk perceelgrens op Geoportail
+                       
+                       {/* KNOPPEN */}
+                       <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                         <a href={rechercheCadastraleLink} target="_blank" style={{ 
+                           background: "#800000", color: "#fff", textDecoration: "none", textAlign: "center", 
+                           padding: "8px", borderRadius: "4px", fontWeight: "bold"
+                         }}>
+                           📍 Bekijk op RechercheCadastrale.fr
+                         </a>
+                         <a href={geoportailLink} target="_blank" className="btn-outline" style={{ textAlign: "center" }}>
+                           🛰️ Bekijk op Geoportail
                          </a>
                        </div>
                     </div>
@@ -499,7 +513,7 @@ function App() {
         input[type="number"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 4px; font-size: 1rem; }
         .btn-outline { 
           display: inline-block; text-decoration: none; color: #555; border: 1px solid #ccc; 
-          padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
+          padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
         }
         .btn-outline:hover { background: #f0f0f0; border-color: #999; }
         .muted { color: #666; font-size: 0.9rem; margin-top: -10px; margin-bottom: 20px; }
