@@ -7,7 +7,7 @@ function fmtBedrag(val) {
   return Number.isNaN(num) ? "–" : num.toLocaleString("nl-NL");
 }
 
-// Badge componentjes voor professionele uitstraling
+// Badge componentjes
 const BadgeVerplicht = () => (
   <span style={{ fontSize: "0.7em", background: "#ffeef0", color: "#c00", padding: "2px 6px", borderRadius: 4, marginLeft: 6, fontWeight: "600" }}>
     VERPLICHT
@@ -20,7 +20,7 @@ const BadgeCheck = () => (
   </span>
 );
 
-// --- DATA & LIJSTEN ---
+// --- DATA ---
 const kostenMinderingItems = [
   { stateName: "fosse", label: "Septic tank (Fosse) niet op norm", default: 8000 },
   { stateName: "dak", label: "Dakstructuur/pannen slecht", default: 15000 },
@@ -62,7 +62,7 @@ const checklistGroepen = [
   }
 ];
 
-// --- AUTOCOMPLETE COMPONENT ---
+// --- AUTOCOMPLETE ---
 function AdresAutoComplete({ setAdresFields }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -128,15 +128,17 @@ function App() {
   const [oppervlakte, setOppervlakte] = useState("");
   const [perceel, setPerceel] = useState("");
   const [bouwjaar, setBouwjaar] = useState("");
-  const [taxeF, setTaxeF] = useState(""); // Informatief
   
   // Waardebepaling
   const [m2Prijs, setM2Prijs] = useState(""); 
   const [dvfInfo, setDvfInfo] = useState("");
   const [loading, setLoading] = useState(false);
-  const [kadasterOpp, setKadasterOpp] = useState(null);
+  
+  // Kadaster Data (De Tegel!)
+  const [kadasterInfo, setKadasterInfo] = useState(null);
+  const [kadasterLoading, setKadasterLoading] = useState(false);
 
-  // Markt Sentiment Slider (-10% tot +10%)
+  // Markt Sentiment Slider
   const [marktSentiment, setMarktSentiment] = useState(0); 
 
   // Kosten & Checklist
@@ -151,21 +153,30 @@ function App() {
   );
   const [kostenChecklist, setKostenChecklist] = useState({});
 
-  // --- LOGICA: HAAL DATA OP ---
+  // --- DATA OPHALEN ---
   useEffect(() => {
     if (adresFields.lat && adresFields.lon) {
       setLoading(true);
+      setKadasterLoading(true);
       
-      // 1. Kadaster Oppervlakte (IGN)
+      // 1. Kadaster (IGN) - Haalt perceelnummer, sectie en grootte op
       fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${adresFields.lon},${adresFields.lat}]}`)
         .then(res => res.json())
         .then(data => {
           if (data?.features?.length > 0) {
-            setKadasterOpp(data.features[0].properties.contenance);
-            if (!perceel) setPerceel(data.features[0].properties.contenance);
+            const p = data.features[0].properties;
+            setKadasterInfo({
+              section: p.section,
+              numero: p.numero,
+              oppervlakte: p.contenance
+            });
+            if (!perceel) setPerceel(p.contenance);
+          } else {
+            setKadasterInfo(null);
           }
+          setKadasterLoading(false);
         })
-        .catch(() => {});
+        .catch(() => setKadasterLoading(false));
 
       // 2. Slimme Prijszoeker (DVF)
       const fetchPrices = async () => {
@@ -218,24 +229,21 @@ function App() {
     Object.keys(minderingChecked).reduce((s, k) => minderingChecked[k] ? s + Number(kosten[k]) : s, 0) +
     Object.keys(kostenChecklist).reduce((s, k) => checked[k] ? s + Number(kostenChecklist[k]) : s, 0);
 
-  // De 'Marktwaarde' is de technische waarde PLUS/MIN het sentiment
   const marktCorrectie = technischeWaarde * (marktSentiment / 100);
   const gecorrigeerdeMarktwaarde = technischeWaarde + marktCorrectie;
-  
-  // Het adviesbod is marktwaarde min herstelkosten
   const adviesBod = Math.max(0, gecorrigeerdeMarktwaarde - kostenTotaal);
 
   // --- LINKS GENEREREN ---
-  // Fix 404 Georisques: Gebruik lat/lon endpoint
   const geoRisquesLink = adresFields.lat 
     ? `https://www.georisques.gouv.fr/mes-risques/connaitre-les-risques-pres-de-chez-moi?lat=${adresFields.lat}&lng=${adresFields.lon}`
     : "https://www.georisques.gouv.fr/";
 
-  // Fix Geoportail Urbanisme: Gebruik lat/lon deep link
-  const urbLink = adresFields.lat
-    ? `https://www.geoportail-urbanisme.gouv.fr/map/#tile=1&lon=${adresFields.lon}&lat=${adresFields.lat}&zoom=15`
-    : "https://www.geoportail-urbanisme.gouv.fr/map/";
-
+  // Directe link naar Geoportail Perceelkaart (Zoom level 18)
+  const geoportailLink = adresFields.lat
+    ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=18&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes`
+    : "https://www.geoportail.gouv.fr/carte";
+    
+  // De nieuwe, betere kaart
   const dvfMapLink = "https://explore.data.gouv.fr/fr/immobilier?onglet=carte&filtre=tous";
 
   // --- HANDLERS ---
@@ -275,16 +283,45 @@ function App() {
             <div style={{ gridColumn: "1 / -1" }}>
               <label>Adres van het pand <BadgeVerplicht /></label>
               <AdresAutoComplete setAdresFields={setAdresFields} />
+              
+              {/* --- DE KADASTER TEGEL (TERUG VAN WEGGEWEEST) --- */}
+              {adresFields.adres && (
+                <div style={{ marginTop: 10, padding: 15, background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 6 }}>
+                  <div style={{ fontWeight: "bold", color: "#800000", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+                    <span>🏛️ Officieel Kadaster</span>
+                    {kadasterLoading && <span>...</span>}
+                  </div>
+                  
+                  {kadasterInfo ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.95rem" }}>
+                       <div>
+                         <span style={{color: "#666"}}>Sectie & Nummer:</span><br/>
+                         <b>{kadasterInfo.section} - {kadasterInfo.numero}</b>
+                       </div>
+                       <div>
+                         <span style={{color: "#666"}}>Oppervlakte:</span><br/>
+                         <b>{kadasterInfo.oppervlakte} m²</b>
+                       </div>
+                       <div style={{ gridColumn: "1 / -1", marginTop: 5 }}>
+                         <a href={geoportailLink} target="_blank" className="btn-outline" style={{width: "100%", textAlign: "center", display: "block"}}>
+                           📍 Bekijk perceelgrens op Geoportail
+                         </a>
+                       </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: "#666", fontStyle: "italic" }}>
+                      Nog geen kadasterdata beschikbaar. Selecteer een adres.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* QUICK LINKS */}
             {adresFields.adres && (
-              <div style={{ gridColumn: "1 / -1", background: "#f8f9fa", padding: 15, borderRadius: 8, borderLeft: "4px solid #800000" }}>
-                <h4 style={{ margin: "0 0 10px 0" }}>📍 Locatie Analyse</h4>
-                <div style={{ display: "flex", gap: 15, flexWrap: "wrap" }}>
-                  <a href={geoRisquesLink} target="_blank" className="btn-outline">⚠️ Risico Rapport (Overstroming/Klei)</a>
-                  <a href={urbLink} target="_blank" className="btn-outline">🗺️ Bestemmingsplan (PLU)</a>
-                  <a href={dvfMapLink} target="_blank" className="btn-outline">📊 Bekijk buren op kaart</a>
-                </div>
+              <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5 }}>
+                 <a href={geoRisquesLink} target="_blank" className="btn-outline">⚠️ Risico's (Overstroming/Klei)</a>
+                 <a href={dvfMapLink} target="_blank" className="btn-outline">💰 Bekijk verkoopprijzen buren</a>
               </div>
             )}
 
@@ -321,24 +358,14 @@ function App() {
                 type="number" 
                 value={perceel} 
                 onChange={e => setPerceel(e.target.value)} 
-                placeholder={kadasterOpp || ""}
+                placeholder={kadasterInfo ? kadasterInfo.oppervlakte : ""}
               />
-              {kadasterOpp && <small style={{ color: "green" }}>✓ Uit kadaster: {kadasterOpp} m²</small>}
+              {kadasterInfo && <small style={{ color: "green" }}>✓ Gekopieerd uit kadaster</small>}
             </div>
 
             <div>
               <label>Bouwjaar (Indicatief)</label>
               <input type="number" value={bouwjaar} onChange={e => setBouwjaar(e.target.value)} placeholder="Bijv. 1950" />
-            </div>
-
-            <div style={{ gridColumn: "1 / -1", marginTop: 20 }}>
-              <h4 style={{ borderBottom: "1px solid #ddd", paddingBottom: 5 }}>Vaste Lasten (Indicatief voor jezelf)</h4>
-              <div className="grid">
-                <div>
-                  <label>Taxe Foncière (€/jaar)</label>
-                  <input type="number" value={taxeF} onChange={e => setTaxeF(e.target.value)} placeholder="Vraag aan makelaar/verkoper" />
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -414,7 +441,7 @@ function App() {
           {/* SLIDER VOOR MARKTSENTIMENT */}
           <div style={{ background: "#f4f4f4", padding: 20, borderRadius: 8, marginBottom: 30 }}>
             <label style={{ fontWeight: "bold", display: "block", marginBottom: 10 }}>
-              Correctie op Marktwaarde: {marktSentiment > 0 ? `+${marktSentiment}%` : `${marktSentiment}%`}
+              Staat van het pand / Ligging: {marktSentiment > 0 ? `+${marktSentiment}%` : `${marktSentiment}%`}
             </label>
             <input 
               type="range" 
@@ -425,17 +452,17 @@ function App() {
             />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#666", marginTop: 5 }}>
               <span>🏚️ Bouwval / Slechte ligging</span>
-              <span>Gemiddeld</span>
+              <span>Normaal</span>
               <span>✨ Instapklaar / Toplocatie</span>
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 15, fontSize: "1.1rem" }}>
-            <div>Technische Marktwaarde ({oppervlakte}m² x €{m2Prijs}):</div>
+            <div>Technische Waarde ({oppervlakte}m² x €{m2Prijs}):</div>
             <div style={{ fontWeight: "bold" }}>€ {fmtBedrag(technischeWaarde)}</div>
             
             <div style={{ color: marktSentiment !== 0 ? "#000" : "#999" }}>
-              Marktcorrectie ({marktSentiment}%):
+              Correctie staat/ligging ({marktSentiment}%):
             </div>
             <div style={{ fontWeight: "bold", color: marktSentiment !== 0 ? "#000" : "#999" }}>
               {marktSentiment > 0 ? "+" : ""} € {fmtBedrag(marktCorrectie)}
@@ -472,7 +499,7 @@ function App() {
         input[type="number"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 4px; font-size: 1rem; }
         .btn-outline { 
           display: inline-block; text-decoration: none; color: #555; border: 1px solid #ccc; 
-          padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
+          padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
         }
         .btn-outline:hover { background: #f0f0f0; border-color: #999; }
         .muted { color: #666; font-size: 0.9rem; margin-top: -10px; margin-bottom: 20px; }
