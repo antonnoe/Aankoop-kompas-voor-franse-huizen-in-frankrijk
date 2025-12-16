@@ -1,123 +1,3 @@
-import React, { useState, useEffect } from "react";
-
-// --- HELPERS ---
-function fmtBedrag(val) {
-  if (!val) return "–";
-  const num = Number(val);
-  return Number.isNaN(num) ? "–" : num.toLocaleString("nl-NL");
-}
-
-// Badge componentjes
-const BadgeVerplicht = () => (
-  <span style={{ fontSize: "0.7em", background: "#ffeef0", color: "#c00", padding: "2px 6px", borderRadius: 4, marginLeft: 6, fontWeight: "600" }}>
-    VERPLICHT
-  </span>
-);
-
-const BadgeCheck = () => (
-  <span style={{ fontSize: "0.7em", background: "#e6f7ff", color: "#0050b3", padding: "2px 6px", borderRadius: 4, marginLeft: 6, fontWeight: "600" }}>
-    CHECK DIT
-  </span>
-);
-
-// --- DATA ---
-const kostenMinderingItems = [
-  { stateName: "fosse", label: "Septic tank (Fosse) niet op norm", default: 8000 },
-  { stateName: "dak", label: "Dakstructuur/pannen slecht", default: 15000 },
-  { stateName: "ramen", label: "Enkel glas / rotte kozijnen", default: 4000 },
-  { stateName: "isolatie", label: "Geen/slechte isolatie (DPE F/G)", default: 8000 },
-  { stateName: "sanitair", label: "Badkamer/Sanitair verouderd", default: 7000 },
-  { stateName: "keuken", label: "Keuken vervangen", default: 6000 },
-  { stateName: "elektra", label: "Elektra niet conform (gevaar)", default: 6000 },
-  { stateName: "verwarming", label: "Verwarming vervangen", default: 10000 }
-];
-
-const checklistGroepen = [
-  {
-    naam: "Documenten & Recht",
-    items: [
-      { name: "kadaster", label: "Kadasterkaart & Perceelgrens", badge: "check" },
-      { name: "bestemmingsplan", label: "Bestemmingsplan (PLU/Zone N/U)", badge: "check" },
-      { name: "diagnostics", label: "DDT Rapporten (Lood/Asbest/Elektra)", badge: "check" },
-      { name: "eigendomsbewijs", label: "Eigendomsbewijs (Titre) aanwezig" },
-      { name: "erfdienst", label: "Erfdienstbaarheden (recht van overpad)" }
-    ]
-  },
-  {
-    naam: "Staat van het Pand",
-    items: [
-      { name: "bouwkundig", label: "Muren/Scheuren/Vochtplekken", badge: "check" },
-      { name: "dakgoten", label: "Staat dakgoten & zinkwerk", kostenVeld: true },
-      { name: "houtstaat", label: "Houtwerk & Balken (Boktor/Termiet)", kostenVeld: true },
-      { name: "vocht", label: "Optrekkend vocht / Schimmel", kostenVeld: true }
-    ]
-  },
-  {
-    naam: "Omgeving",
-    items: [
-      { name: "internet", label: "Internet (Glasvezel/4G) getest" },
-      { name: "geluid", label: "Geluidsoverlast (weg/buren/honden)" },
-      { name: "geur", label: "Geuroverlast (agrarisch/fabriek)" }
-    ]
-  }
-];
-
-// --- AUTOCOMPLETE ---
-function AdresAutoComplete({ setAdresFields }) {
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-
-  useEffect(() => {
-    if (query.length < 3) { setSuggestions([]); return; }
-    fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}`)
-      .then((res) => res.json())
-      .then((data) => setSuggestions(data.features || []))
-      .catch(() => {});
-  }, [query]);
-
-  function handleSelect(s) {
-    setQuery(s.properties.label);
-    setSuggestions([]);
-    const [lon, lat] = s.geometry.coordinates;
-    setAdresFields({
-      adres: s.properties.label,
-      city: s.properties.city,
-      zip: s.properties.postcode,
-      insee: s.properties.citycode,
-      lat, lon
-    });
-  }
-
-  return (
-    <div style={{ position: "relative", marginBottom: 15 }}>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="🔍 Zoek adres (bijv. 22 Rue de Sehen...)"
-        style={{ width: "100%", padding: "12px", border: "1px solid #ccc", borderRadius: "6px", fontSize: "1rem" }}
-      />
-      {suggestions.length > 0 && (
-        <ul style={{
-          position: "absolute", top: "100%", left: 0, right: 0,
-          background: "#fff", border: "1px solid #ddd", zIndex: 100,
-          listStyle: "none", padding: 0, margin: 0, boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
-        }}>
-          {suggestions.map((s) => (
-            <li
-              key={s.properties.id}
-              style={{ padding: "10px", cursor: "pointer", borderBottom: "1px solid #eee" }}
-              onClick={() => handleSelect(s)}
-            >
-              {s.properties.label}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 // --- MAIN APP ---
 function App() {
   const [tab, setTab] = useState(0);
@@ -155,18 +35,22 @@ function App() {
 
   // --- DATA OPHALEN ---
   useEffect(() => {
+    // We checken nu ook of 'insee' bestaat, dat maakt de call stabieler
     if (adresFields.lat && adresFields.lon) {
       setLoading(true);
       setKadasterLoading(true);
       
-      // 1. Kadaster (IGN) - DE ROBUUSTE VERSIE
-      // We gebruiken encodeURIComponent om zeker te weten dat de JSON geom parameter goed aankomt
+      // 1. Kadaster (IGN) - DE ROBUUSTE VERSIE 2.0
+      // We voegen code_insee toe aan de query om fouten te voorkomen
       const geomParams = encodeURIComponent(JSON.stringify({
         type: "Point",
         coordinates: [adresFields.lon, adresFields.lat]
       }));
       
-      fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom=${geomParams}`)
+      // FIX: Als we de insee code hebben, voegen we die toe.
+      const inseeParam = adresFields.insee ? `&code_insee=${adresFields.insee}` : "";
+      
+      fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom=${geomParams}${inseeParam}`)
         .then(res => res.json())
         .then(data => {
           if (data?.features?.length > 0) {
@@ -179,12 +63,14 @@ function App() {
             });
             if (!perceel) setPerceel(p.contenance);
           } else {
+            console.warn("Geen perceel gevonden op exacte punt (waarschijnlijk punt op de weg)");
             setKadasterInfo(null);
           }
           setKadasterLoading(false);
         })
         .catch((err) => {
-          console.error(err);
+          console.error("IGN API Fout:", err);
+          setKadasterInfo(null);
           setKadasterLoading(false);
         });
 
@@ -229,7 +115,7 @@ function App() {
       };
       fetchPrices();
     }
-  }, [adresFields.lat, adresFields.lon]);
+  }, [adresFields.lat, adresFields.lon, adresFields.insee]);
 
   // --- BEREKENING ---
   const technischeWaarde = (Number(oppervlakte) || 0) * (Number(m2Prijs) || 0);
@@ -252,9 +138,13 @@ function App() {
     : "https://www.geoportail.gouv.fr/carte";
     
   // De WOW-link
+  // FIX: Als ID ontbreekt, gebruiken we geoportail als fallback voor de visuele check, 
+  // of we sturen ze naar de kaart gecentreerd op de stad als dat kan.
   const rechercheCadastraleLink = kadasterInfo?.id
     ? `https://recherchecadastrale.fr/cadastre/${kadasterInfo.id}`
-    : "https://recherchecadastrale.fr/cadastre";
+    : `https://recherchecadastrale.fr/map?lat=${adresFields.lat}&lng=${adresFields.lon}&z=18`; 
+    // ^ Let op: recherchecadastrale ondersteunt niet altijd query params goed, 
+    // dus als dit faalt is geoportail de betere 'kaart' optie.
 
   const dvfMapLink = "https://explore.data.gouv.fr/fr/immobilier?onglet=carte&filtre=tous";
 
@@ -330,7 +220,15 @@ function App() {
                     </div>
                   ) : (
                     <div style={{ color: "#666", fontStyle: "italic" }}>
-                      {!kadasterLoading && "Geen kadasterdata gevonden op deze exacte locatie. Probeer een ander huisnummer."}
+                      {!kadasterLoading && (
+                        <div>
+                          ⚠️ Geen specifiek perceel gevonden (punt ligt mogelijk op de weg). 
+                          <br/>
+                          <a href={geoportailLink} target="_blank" style={{ color: "#800000", fontWeight: "bold" }}>
+                            Klik hier om handmatig te zoeken op de kaart
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -527,5 +425,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
