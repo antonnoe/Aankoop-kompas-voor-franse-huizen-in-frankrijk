@@ -1,107 +1,68 @@
 import React, { useState, useEffect } from "react";
 
-// Helper: Format currency (Euro)
+// --- HELPERS ---
 function fmtBedrag(val) {
-  if (val === "" || val === null || val === undefined) return "–";
+  if (!val) return "–";
   const num = Number(val);
-  if (Number.isNaN(num)) return "–";
-  return num.toLocaleString("nl-NL");
+  return Number.isNaN(num) ? "–" : num.toLocaleString("nl-NL");
 }
 
-// --- Constants ---
-const bouwtypes = [
-  "Natuursteen (En pierre)",
-  "Betonblokken (Parpaings)",
-  "Baksteen (Brique)",
-  "Houtskelet/Vakwerk",
-  "Anders"
-];
-
-const mandatory = (str) => (
-  <span>
-    {str}{" "}
-    <span style={{ color: "red" }} title="Verplicht veld">*</span>
-  </span>
-);
-const important = (str) => (
-  <span>
-    {str}{" "}
-    <span style={{ color: "#e08b00" }} title="Belangrijk veld">**</span>
+// Badge componentjes voor professionele uitstraling
+const BadgeVerplicht = () => (
+  <span style={{ fontSize: "0.7em", background: "#ffeef0", color: "#c00", padding: "2px 6px", borderRadius: 4, marginLeft: 6, fontWeight: "600" }}>
+    VERPLICHT
   </span>
 );
 
-// --- Kosten mindering hoofdposten ---
+const BadgeCheck = () => (
+  <span style={{ fontSize: "0.7em", background: "#e6f7ff", color: "#0050b3", padding: "2px 6px", borderRadius: 4, marginLeft: 6, fontWeight: "600" }}>
+    CHECK DIT
+  </span>
+);
+
+// --- DATA & LIJSTEN ---
 const kostenMinderingItems = [
-  { stateName: "fosse", label: "Vervangen fosse septique", default: 8000, mandatory: true },
-  { stateName: "dak", label: "Dakvernieuwing", default: 15000, important: true },
-  { stateName: "ramen", label: "Ramen isolatie/vervanging", default: 4000, important: true },
-  { stateName: "isolatie", label: "Algemene isolatie", default: 8000, important: true },
-  { stateName: "sanitair", label: "Sanitaire voorzieningen", default: 7000 },
-  { stateName: "keuken", label: "Vernieuwen keuken", default: 6000 },
-  { stateName: "schilderwerk", label: "Schilderwerk binnen/buiten", default: 5000 },
-  { stateName: "elektra", label: "Elektriciteit vernieuwen", default: 6000 },
-  { stateName: "verwarming", label: "Verwarmingssysteem", default: 9000 }
+  { stateName: "fosse", label: "Septic tank (Fosse) niet op norm", default: 8000 },
+  { stateName: "dak", label: "Dakstructuur/pannen slecht", default: 15000 },
+  { stateName: "ramen", label: "Enkel glas / rotte kozijnen", default: 4000 },
+  { stateName: "isolatie", label: "Geen/slechte isolatie (DPE F/G)", default: 8000 },
+  { stateName: "sanitair", label: "Badkamer/Sanitair verouderd", default: 7000 },
+  { stateName: "keuken", label: "Keuken vervangen", default: 6000 },
+  { stateName: "elektra", label: "Elektra niet conform (gevaar)", default: 6000 },
+  { stateName: "verwarming", label: "Verwarming vervangen", default: 10000 }
 ];
 
-// Checklist Groepen
 const checklistGroepen = [
   {
-    naam: "Juridisch & Documenten",
+    naam: "Documenten & Recht",
     items: [
-      { name: "kadaster", label: "Kadasterkaart bekeken", mandatory: true },
-      { name: "bestemmingsplan", label: "Bestemmingsplan (PLU) gecheckt", important: true },
-      { name: "erfdienst", label: "Erfdienstbaarheden (recht van overpad?)" },
-      { name: "eigendomsbewijs", label: "Titre de propriété aanwezig" },
-      { name: "diagnostics", label: "DDT (Diagnostiek rapporten) ingezien" }
+      { name: "kadaster", label: "Kadasterkaart & Perceelgrens", badge: "check" },
+      { name: "bestemmingsplan", label: "Bestemmingsplan (PLU/Zone N/U)", badge: "check" },
+      { name: "diagnostics", label: "DDT Rapporten (Lood/Asbest/Elektra)", badge: "check" },
+      { name: "eigendomsbewijs", label: "Eigendomsbewijs (Titre) aanwezig" },
+      { name: "erfdienst", label: "Erfdienstbaarheden (recht van overpad)" }
     ]
   },
   {
-    naam: "Bouwkundige Staat",
+    naam: "Staat van het Pand",
     items: [
-      { name: "bouwkundig", label: "Algemene staat muren/dak", important: true },
-      { name: "vocht", label: "Geen tekenen van vocht/schimmel", kostenVeld: true },
-      { name: "houtstaat", label: "Houtwerk (balken/luiken) in orde", kostenVeld: true },
-      { name: "dakgoten", label: "Dakgoten en afvoer", kostenVeld: true },
-      { name: "beglazing", label: "Staat van beglazing (enkel/dubbel)", kostenVeld: true }
+      { name: "bouwkundig", label: "Muren/Scheuren/Vochtplekken", badge: "check" },
+      { name: "dakgoten", label: "Staat dakgoten & zinkwerk", kostenVeld: true },
+      { name: "houtstaat", label: "Houtwerk & Balken (Boktor/Termiet)", kostenVeld: true },
+      { name: "vocht", label: "Optrekkend vocht / Schimmel", kostenVeld: true }
     ]
   },
   {
-    naam: "Omgeving & Voorzieningen",
+    naam: "Omgeving",
     items: [
-      { name: "internet", label: "Internet snelheid/glasvezel gecheckt" },
-      { name: "mobiel", label: "Mobiel bereik (4G/5G) getest" },
-      { name: "geluid", label: "Geen geluidsoverlast (weg/buren)" },
-      { name: "geur", label: "Geen geuroverlast (agrarisch/fabriek)" },
-      { name: "voorzieningen", label: "Afstand tot bakker/supermarkt acceptabel" }
+      { name: "internet", label: "Internet (Glasvezel/4G) getest" },
+      { name: "geluid", label: "Geluidsoverlast (weg/buren/honden)" },
+      { name: "geur", label: "Geuroverlast (agrarisch/fabriek)" }
     ]
   }
 ];
 
-// --- Tabbladen helper ---
-const Tabs = ({ tab, setTab, list }) => (
-  <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", borderBottom: "1px solid #ddd", paddingBottom: 10 }}>
-    {list.map((item, idx) => (
-      <button
-        key={item}
-        onClick={() => setTab(idx)}
-        className={tab === idx ? "btn" : ""} 
-        style={{
-          background: tab === idx ? "#800000" : "#fff",
-          color: tab === idx ? "#fff" : "#444",
-          border: "1px solid #ddd",
-          padding: "8px 16px",
-          borderRadius: "4px",
-          cursor: "pointer",
-          fontWeight: tab === idx ? "bold" : "normal"
-        }}
-      >
-        {item}
-      </button>
-    ))}
-  </div>
-);
-
-// --- Adres Autocomplete ---
+// --- AUTOCOMPLETE COMPONENT ---
 function AdresAutoComplete({ setAdresFields }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -114,42 +75,38 @@ function AdresAutoComplete({ setAdresFields }) {
       .catch(() => {});
   }, [query]);
 
-  function handleSelect(suggestion) {
-    setQuery(suggestion.properties.label);
+  function handleSelect(s) {
+    setQuery(s.properties.label);
     setSuggestions([]);
-    
-    // Sla coördinaten op
-    const [lon, lat] = suggestion.geometry.coordinates;
-    
+    const [lon, lat] = s.geometry.coordinates;
     setAdresFields({
-      adres: suggestion.properties.label,
-      postcode: suggestion.properties.postcode,
-      gemeente: suggestion.properties.city,
-      insee: suggestion.properties.citycode, 
-      lat: lat,
-      lon: lon
+      adres: s.properties.label,
+      city: s.properties.city,
+      zip: s.properties.postcode,
+      insee: s.properties.citycode,
+      lat, lon
     });
   }
 
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", marginBottom: 15 }}>
       <input
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Typ adres (bijv. 22 Rue de Sehen...)"
-        style={{ width: "100%", padding: "10px", border: "1px solid #ccc", borderRadius: "4px" }}
+        placeholder="🔍 Zoek adres (bijv. 10 Rue de l'Eglise...)"
+        style={{ width: "100%", padding: "12px", border: "1px solid #ccc", borderRadius: "6px", fontSize: "1rem" }}
       />
       {suggestions.length > 0 && (
         <ul style={{
           position: "absolute", top: "100%", left: 0, right: 0,
           background: "#fff", border: "1px solid #ddd", zIndex: 100,
-          listStyle: "none", padding: 0, margin: 0, maxHeight: "200px", overflowY: "auto"
+          listStyle: "none", padding: 0, margin: 0, boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
         }}>
           {suggestions.map((s) => (
             <li
               key={s.properties.id}
-              style={{ padding: "8px", cursor: "pointer", borderBottom: "1px solid #eee" }}
+              style={{ padding: "10px", cursor: "pointer", borderBottom: "1px solid #eee" }}
               onClick={() => handleSelect(s)}
             >
               {s.properties.label}
@@ -161,398 +118,365 @@ function AdresAutoComplete({ setAdresFields }) {
   );
 }
 
+// --- MAIN APP ---
 function App() {
-  const tabNames = ["Basisgegevens", "Checklist", "Kosten & Herstel", "Resultaat"];
   const [tab, setTab] = useState(0);
 
-  // Data State
+  // Basis Data
   const [adresFields, setAdresFields] = useState({});
   const [vraagprijs, setVraagprijs] = useState("");
   const [oppervlakte, setOppervlakte] = useState("");
   const [perceel, setPerceel] = useState("");
   const [bouwjaar, setBouwjaar] = useState("");
-  const [soortBouw, setSoortBouw] = useState("");
+  const [taxeF, setTaxeF] = useState(""); // Informatief
   
-  // Automatische data
+  // Waardebepaling
   const [m2Prijs, setM2Prijs] = useState(""); 
-  const [dvfLoading, setDvfLoading] = useState(false);
   const [dvfInfo, setDvfInfo] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [kadasterOpp, setKadasterOpp] = useState(null);
+
+  // Markt Sentiment Slider (-10% tot +10%)
+  const [marktSentiment, setMarktSentiment] = useState(0); 
+
+  // Kosten & Checklist
+  const [minderingChecked, setMinderingChecked] = useState({});
+  const [kosten, setKosten] = useState(
+    kostenMinderingItems.reduce((acc, i) => ({ ...acc, [i.stateName]: i.default }), {})
+  );
   
-  // Kadaster data
-  const [kadasterInfo, setKadasterInfo] = useState(null); 
-  const [kadasterLoading, setKadasterLoading] = useState(false);
-
-  // --- SLIMME ZOEKFUNCTIE (AGRESSIEVE VERSIE) ---
-  const fetchPricesSmart = async (lat, lon) => {
-    // We starten direct wat ruimer (1km) en gaan tot 20km
-    const distances = [500, 1000, 3000, 5000, 10000, 20000]; 
-    
-    setDvfLoading(true);
-    setM2Prijs(""); 
-    setDvfInfo("Zoeken naar vergelijkbare huizen...");
-    
-    for (const dist of distances) {
-        try {
-            const res = await fetch(`https://api.cquest.org/dvf?lat=${lat}&lon=${lon}&dist=${dist}`);
-            const data = await res.json();
-            
-            // Filter: Vente, Maison, >10k prijs, >20m2 oppervlakte
-            const relevant = data.features.filter(f => 
-                f.properties.nature_mutation === "Vente" &&
-                f.properties.type_local === "Maison" &&
-                f.properties.valeur_fonciere > 10000 && 
-                f.properties.surface_reelle_bati > 20
-            );
-
-            // LOGICA: Hebben we IETS gevonden?
-            if (relevant.length > 0) {
-                
-                // Bereken m2 prijzen
-                let prices = relevant.map(h => 
-                   h.properties.valeur_fonciere / h.properties.surface_reelle_bati
-                );
-                
-                let avg = 0;
-                let infoText = "";
-
-                // Situatie A: VEEL data (>= 5) -> We kunnen luxe doen en uitschieters filteren
-                if (relevant.length >= 5) {
-                    prices.sort((a, b) => a - b);
-                    const trimCount = Math.floor(prices.length * 0.2); 
-                    const cleanPrices = prices.slice(trimCount, prices.length - trimCount);
-                    const sum = cleanPrices.reduce((a, b) => a + b, 0);
-                    avg = Math.round(sum / cleanPrices.length);
-                    infoText = `✅ Gevonden: ${relevant.length} woningen (straal ${dist/1000}km).`;
-                } 
-                // Situatie B: WEINIG data (1-4) -> Pak gewoon alles wat we hebben
-                else {
-                    const sum = prices.reduce((a, b) => a + b, 0);
-                    avg = Math.round(sum / prices.length);
-                    infoText = `⚠️ Beperkte data: ${relevant.length} woning(en) in straal ${dist/1000}km.`;
-                }
-                
-                setM2Prijs(avg);
-                setDvfInfo(infoText);
-                setDvfLoading(false);
-                return; // Gevonden! Stop zoeken.
-            }
-            
-            // Niks gevonden in deze straal? Op naar de volgende...
-            setDvfInfo(`Niets binnen ${dist}m, zoeken in ${distances[distances.indexOf(dist)+1] || 20000}m...`);
-
-        } catch (e) {
-            console.error("Fetch error:", e);
-        }
-    }
-    
-    setDvfInfo("❌ Helaas, zelfs binnen 20km geen vergelijkbare data.");
-    setDvfLoading(false);
-  };
-
-  // --- EFFECT: Trigger bij adreswijziging ---
-  useEffect(() => {
-    if (adresFields.lat && adresFields.lon) {
-      
-      // 1. Start slimme prijs zoektocht
-      fetchPricesSmart(adresFields.lat, adresFields.lon);
-
-      // 2. Kadaster Perceel (IGN API)
-      setKadasterLoading(true);
-      const ignUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${adresFields.lon},${adresFields.lat}]}`;
-      
-      fetch(ignUrl)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.features && data.features.length > 0) {
-            const p = data.features[0].properties;
-            setKadasterInfo({
-              section: p.section,
-              numero: p.numero,
-              oppervlakte: p.contenance 
-            });
-            if (!perceel) setPerceel(p.contenance);
-          } else {
-            setKadasterInfo(null);
-          }
-          setKadasterLoading(false);
-        })
-        .catch(() => setKadasterLoading(false));
-        
-    }
-  }, [adresFields.lat, adresFields.lon]);
-
-  // Lasten
-  const [taxeF, setTaxeF] = useState("");
-  const [taxeH, setTaxeH] = useState("");
-
-  // Checklist State
   const checkboxNames = checklistGroepen.flatMap(g => g.items).map(i => i.name);
   const [checked, setChecked] = useState(
     checkboxNames.reduce((acc, name) => ({ ...acc, [name]: false }), {})
   );
   const [kostenChecklist, setKostenChecklist] = useState({});
+
+  // --- LOGICA: HAAL DATA OP ---
+  useEffect(() => {
+    if (adresFields.lat && adresFields.lon) {
+      setLoading(true);
+      
+      // 1. Kadaster Oppervlakte (IGN)
+      fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${adresFields.lon},${adresFields.lat}]}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.features?.length > 0) {
+            setKadasterOpp(data.features[0].properties.contenance);
+            if (!perceel) setPerceel(data.features[0].properties.contenance);
+          }
+        })
+        .catch(() => {});
+
+      // 2. Slimme Prijszoeker (DVF)
+      const fetchPrices = async () => {
+        const distances = [500, 1000, 3000, 5000, 10000, 20000];
+        setDvfInfo("Zoeken naar vergelijkbare huizen...");
+        
+        for (const dist of distances) {
+          try {
+            const res = await fetch(`https://api.cquest.org/dvf?lat=${adresFields.lat}&lon=${adresFields.lon}&dist=${dist}`);
+            const data = await res.json();
+            
+            // Filter: Koop, Huis, >15k prijs, >30m2
+            const relevant = data.features.filter(f => 
+              f.properties.nature_mutation === "Vente" &&
+              f.properties.type_local === "Maison" &&
+              f.properties.valeur_fonciere > 15000 && 
+              f.properties.surface_reelle_bati > 30
+            );
+
+            if (relevant.length > 0) {
+              // Bereken m2 prijzen
+              let prices = relevant.map(h => h.properties.valeur_fonciere / h.properties.surface_reelle_bati);
+              
+              // Filter uitschieters als we genoeg data hebben
+              if (relevant.length >= 5) {
+                prices.sort((a, b) => a - b);
+                const trim = Math.floor(prices.length * 0.2);
+                prices = prices.slice(trim, prices.length - trim);
+              }
+              
+              const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+              setM2Prijs(avg);
+              setDvfInfo(`✅ Gevonden: ${relevant.length} woningen (straal ${dist/1000}km).`);
+              setLoading(false);
+              return; 
+            }
+          } catch (e) { console.error(e); }
+        }
+        setDvfInfo("⚠️ Geen automatische prijs gevonden. Vul handmatig in.");
+        setLoading(false);
+      };
+      fetchPrices();
+    }
+  }, [adresFields.lat, adresFields.lon]);
+
+  // --- BEREKENING ---
+  const technischeWaarde = (Number(oppervlakte) || 0) * (Number(m2Prijs) || 0);
+  
+  const kostenTotaal = 
+    Object.keys(minderingChecked).reduce((s, k) => minderingChecked[k] ? s + Number(kosten[k]) : s, 0) +
+    Object.keys(kostenChecklist).reduce((s, k) => checked[k] ? s + Number(kostenChecklist[k]) : s, 0);
+
+  // De 'Marktwaarde' is de technische waarde PLUS/MIN het sentiment
+  const marktCorrectie = technischeWaarde * (marktSentiment / 100);
+  const gecorrigeerdeMarktwaarde = technischeWaarde + marktCorrectie;
+  
+  // Het adviesbod is marktwaarde min herstelkosten
+  const adviesBod = Math.max(0, gecorrigeerdeMarktwaarde - kostenTotaal);
+
+  // --- LINKS GENEREREN ---
+  // Fix 404 Georisques: Gebruik lat/lon endpoint
+  const geoRisquesLink = adresFields.lat 
+    ? `https://www.georisques.gouv.fr/mes-risques/connaitre-les-risques-pres-de-chez-moi?lat=${adresFields.lat}&lng=${adresFields.lon}`
+    : "https://www.georisques.gouv.fr/";
+
+  // Fix Geoportail Urbanisme: Gebruik lat/lon deep link
+  const urbLink = adresFields.lat
+    ? `https://www.geoportail-urbanisme.gouv.fr/map/#tile=1&lon=${adresFields.lon}&lat=${adresFields.lat}&zoom=15`
+    : "https://www.geoportail-urbanisme.gouv.fr/map/";
+
+  const dvfMapLink = "https://explore.data.gouv.fr/fr/immobilier?onglet=carte&filtre=tous";
+
+  // --- HANDLERS ---
   const handleCheck = (e) => setChecked({ ...checked, [e.target.name]: e.target.checked });
-  const handleKostenChecklistChange = (e, name) => setKostenChecklist({ ...kostenChecklist, [name]: e.target.value });
-
-  // Hoofdkosten State
-  const [minderingChecked, setMinderingChecked] = useState({});
-  const [kosten, setKosten] = useState(
-    kostenMinderingItems.reduce((acc, i) => ({ ...acc, [i.stateName]: i.default }), {})
-  );
-  const handleMinderingCheck = (e) => setMinderingChecked({ ...minderingChecked, [e.target.name]: e.target.checked });
-  const handleKostenChange = (e, name) => setKosten({ ...kosten, [name]: e.target.value });
-
-  // Berekeningen
-  const marktwaarde = (Number(oppervlakte) || 0) * (Number(m2Prijs) || 0);
-  const kostenHoofdTotaal = Object.keys(minderingChecked).reduce((sum, key) => 
-    minderingChecked[key] ? sum + (Number(kosten[key]) || 0) : sum, 0
-  );
-  const kostenHerstelTotaal = Object.keys(kostenChecklist).reduce((sum, key) => 
-    checked[key] ? sum + (Number(kostenChecklist[key]) || 0) : sum, 0
-  );
-  const totaleKosten = kostenHoofdTotaal + kostenHerstelTotaal;
-  const adviesBod = Math.max(0, marktwaarde - totaleKosten);
-
-  // Links
-  const georisquesUrl = adresFields.insee ? `https://www.georisques.gouv.fr/cartographie?code_commune=${adresFields.insee}` : "https://www.georisques.gouv.fr/";
-  const geoportailUrl = adresFields.lat ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=19&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes` : "https://www.geoportail.gouv.fr/carte";
+  const handleKostenInput = (e, name, setter) => setter(prev => ({ ...prev, [name]: Number(e.target.value) }));
 
   return (
-    <div className="container">
-      <header style={{ marginBottom: 20 }}>
-        <h1 style={{ color: "#800000" }}>Franse Huizen Checker</h1>
-      </header>
-
-      {/* Sticky Resultaat Balk */}
-      <div style={{
-        position: "fixed", bottom: 20, right: 20, background: "#fff", 
-        padding: "15px 25px", border: "2px solid #800000", borderRadius: "8px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.15)", zIndex: 1000
-      }}>
-        <div style={{ fontSize: "0.9rem", color: "#666" }}>Advies Bieding:</div>
-        <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#800000" }}>
-          {marktwaarde > 0 ? `€ ${fmtBedrag(adviesBod)}` : "..."}
-        </div>
+    <div className="container" style={{ maxWidth: 900, margin: "0 auto", fontFamily: "Mulish, sans-serif", color: "#333" }}>
+      
+      {/* HEADER */}
+      <div style={{ background: "#800000", color: "#fff", padding: "20px", borderRadius: "8px 8px 0 0", marginBottom: 20 }}>
+        <h1 style={{ margin: 0, fontSize: "1.8rem" }}>🇫🇷 Aankoopkompas Frankrijk</h1>
+        <p style={{ margin: "5px 0 0 0", opacity: 0.9 }}>Professionele waardebepaling & risico-analyse</p>
       </div>
 
-      <Tabs tab={tab} setTab={setTab} list={tabNames} />
+      {/* TABS */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, borderBottom: "2px solid #eee" }}>
+        {["Object & Waarde", "Checklist & Staat", "Kosten", "Resultaat"].map((t, i) => (
+          <button 
+            key={i} 
+            onClick={() => setTab(i)}
+            style={{ 
+              padding: "10px 20px", cursor: "pointer", border: "none", background: "none", 
+              borderBottom: tab === i ? "3px solid #800000" : "3px solid transparent",
+              fontWeight: tab === i ? "bold" : "normal", color: tab === i ? "#800000" : "#666"
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-      {/* --- TAB 0: BASISGEGEVENS --- */}
+      {/* === TAB 1: OBJECT === */}
       {tab === 0 && (
-        <section className="panel">
-          <h3>Object Gegevens</h3>
+        <div className="panel">
           <div className="grid">
-            <div>
-              <label>{mandatory("Adres")}</label>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label>Adres van het pand <BadgeVerplicht /></label>
               <AdresAutoComplete setAdresFields={setAdresFields} />
-              
-              {/* --- KADASTER INFORMATIE BLOK --- */}
-              {adresFields.adres && (
-                <div style={{ marginTop: 10, padding: 10, background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 4 }}>
-                  <div style={{ fontWeight: "bold", color: "#800000", marginBottom: 4 }}>
-                    🏛️ Kadaster Info {kadasterLoading && "..."}
-                  </div>
-                  {kadasterInfo ? (
-                    <div style={{ fontSize: "0.9rem" }}>
-                      <div><b>Perceel:</b> Sectie {kadasterInfo.section} nr. {kadasterInfo.numero}</div>
-                      <div><b>Oppervlakte:</b> {kadasterInfo.oppervlakte} m² (officieel)</div>
-                      <a href={geoportailUrl} target="_blank" style={{ color: "#000", textDecoration: "underline", display: "block", marginTop: 5 }}>
-                        Bekijk kaart op Geoportail ↗
-                      </a>
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: "0.8rem" }}>Nog geen kadasterdata gevonden (of laadt nog).</span>
-                  )}
+            </div>
+
+            {adresFields.adres && (
+              <div style={{ gridColumn: "1 / -1", background: "#f8f9fa", padding: 15, borderRadius: 8, borderLeft: "4px solid #800000" }}>
+                <h4 style={{ margin: "0 0 10px 0" }}>📍 Locatie Analyse</h4>
+                <div style={{ display: "flex", gap: 15, flexWrap: "wrap" }}>
+                  <a href={geoRisquesLink} target="_blank" className="btn-outline">⚠️ Risico Rapport (Overstroming/Klei)</a>
+                  <a href={urbLink} target="_blank" className="btn-outline">🗺️ Bestemmingsplan (PLU)</a>
+                  <a href={dvfMapLink} target="_blank" className="btn-outline">📊 Bekijk buren op kaart</a>
                 </div>
-              )}
+              </div>
+            )}
+
+            <div>
+              <label>Vraagprijs (€) <BadgeVerplicht /></label>
+              <input type="number" value={vraagprijs} onChange={e => setVraagprijs(e.target.value)} />
             </div>
 
             <div>
-               <label>{mandatory("Vraagprijs (€)")}</label>
-               <input type="number" value={vraagprijs} onChange={e => setVraagprijs(e.target.value)} />
+              <label>Woonoppervlakte (m²) <BadgeVerplicht /></label>
+              <input type="number" value={oppervlakte} onChange={e => setOppervlakte(e.target.value)} />
             </div>
+
             <div>
-               <label>{mandatory("Woonoppervlakte (m²)")}</label>
-               <input type="number" value={oppervlakte} onChange={e => setOppervlakte(e.target.value)} />
-            </div>
-            
-            {/* --- AUTOMATISCHE M2 PRIJS SECTIE --- */}
-            <div>
-               <label>{important("Marktprijs m² (Regio)")}</label>
-               <div style={{ position: "relative" }}>
-                 <input 
-                   type="number" 
-                   value={m2Prijs} 
-                   onChange={e => setM2Prijs(e.target.value)} 
-                   style={{ border: "2px solid #800000", background: dvfLoading ? "#f0f0f0" : "#fff" }}
-                 />
-                 {dvfLoading && <span style={{ position: "absolute", right: 10, top: 10 }}>⏳</span>}
-               </div>
-               
-               <small style={{ display: "block", marginTop: 4, color: "#666" }}>
-                 {dvfInfo ? (
-                    <span style={{ color: dvfInfo.includes("Gevonden") ? "green" : (dvfInfo.includes("Beperkte") ? "orange" : "red"), fontWeight: "bold" }}>
-                        {dvfInfo}
-                    </span>
-                 ) : "Kies een adres om te starten."}
-               </small>
-               
-               <small style={{ display: "block", marginTop: 6, color: "#999" }}>
-                 Controleer handmatig: 
-                 <a href="https://app.dvf.etalab.gouv.fr/" target="_blank" style={{marginLeft: 5, color: "#800000"}}>DVF Kaart</a> | 
-                 <a href="https://www.meilleursagents.com/prix-immobilier/" target="_blank" style={{marginLeft: 5, color: "#800000"}}>MeilleursAgents</a>
-               </small>
-            </div>
-            
-            <div>
-               <label>{important("Perceeloppervlakte (m²)")}</label>
-               <input 
+              <label>Marktprijs Regio (€/m²) <BadgeVerplicht /></label>
+              <div style={{ position: "relative" }}>
+                <input 
                   type="number" 
-                  value={perceel} 
-                  onChange={e => setPerceel(e.target.value)} 
-                  placeholder={kadasterInfo ? kadasterInfo.oppervlakte : ""}
-               />
-               {kadasterInfo && (
-                 <small style={{ color: "green" }}>✓ Automatisch ingevuld via Kadaster</small>
-               )}
+                  value={m2Prijs} 
+                  onChange={e => setM2Prijs(e.target.value)} 
+                  placeholder="Wordt berekend..."
+                  style={{ fontWeight: "bold", color: "#800000" }}
+                />
+                {loading && <span style={{ position: "absolute", right: 10, top: 12 }}>⏳</span>}
+              </div>
+              <small style={{ display: "block", marginTop: 4, color: dvfInfo.includes("Geen") ? "orange" : "green" }}>
+                {dvfInfo}
+              </small>
             </div>
-            <div>
-               <label>Bouwjaar</label>
-               <input type="number" value={bouwjaar} onChange={e => setBouwjaar(e.target.value)} />
-            </div>
-          </div>
 
-          <h3 style={{ marginTop: 30 }}>Financieel & Links</h3>
-          <div className="grid">
             <div>
-              <label>{mandatory("Taxe Foncière (€/jaar)")}</label>
-              <input type="number" value={taxeF} onChange={e => setTaxeF(e.target.value)} />
+              <label>Perceel (m²)</label>
+              <input 
+                type="number" 
+                value={perceel} 
+                onChange={e => setPerceel(e.target.value)} 
+                placeholder={kadasterOpp || ""}
+              />
+              {kadasterOpp && <small style={{ color: "green" }}>✓ Uit kadaster: {kadasterOpp} m²</small>}
             </div>
+
             <div>
-              <label>Taxe d'Habitation (€/jaar)</label>
-              <input type="number" value={taxeH} onChange={e => setTaxeH(e.target.value)} />
+              <label>Bouwjaar (Indicatief)</label>
+              <input type="number" value={bouwjaar} onChange={e => setBouwjaar(e.target.value)} placeholder="Bijv. 1950" />
             </div>
-            <div>
-              <label>Externe bronnen</label>
-              <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
-                <a href={georisquesUrl} target="_blank" className="btn" style={{ fontSize: "0.9rem" }}>
-                  ⚠️ Check Risico's
-                </a>
-                <a href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" className="btn" style={{ fontSize: "0.9rem", background: "#666" }}>
-                  🗺️ Bestemmingsplan
-                </a>
+
+            <div style={{ gridColumn: "1 / -1", marginTop: 20 }}>
+              <h4 style={{ borderBottom: "1px solid #ddd", paddingBottom: 5 }}>Vaste Lasten (Indicatief voor jezelf)</h4>
+              <div className="grid">
+                <div>
+                  <label>Taxe Foncière (€/jaar)</label>
+                  <input type="number" value={taxeF} onChange={e => setTaxeF(e.target.value)} placeholder="Vraag aan makelaar/verkoper" />
+                </div>
               </div>
             </div>
           </div>
-        </section>
+        </div>
       )}
 
-      {/* --- TAB 1: CHECKLIST --- */}
+      {/* === TAB 2: CHECKLIST === */}
       {tab === 1 && (
-        <section>
+        <div>
           {checklistGroepen.map(groep => (
             <div key={groep.naam} className="panel" style={{ marginBottom: 15 }}>
               <h4>{groep.naam}</h4>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div className="grid">
                 {groep.items.map(item => (
-                  <label key={item.name} style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                  <label key={item.name} style={{ display: "flex", alignItems: "center", cursor: "pointer", padding: 5 }}>
                     <input 
                       type="checkbox" 
                       name={item.name} 
                       checked={!!checked[item.name]} 
                       onChange={handleCheck} 
-                      style={{ width: "auto", marginRight: 10 }}
+                      style={{ width: "20px", height: "20px", marginRight: 10, accentColor: "#800000" }}
                     />
                     <span>
-                        {item.mandatory ? mandatory(item.label) : (item.important ? important(item.label) : item.label)}
+                      {item.label}
+                      {item.badge === "check" && <BadgeCheck />}
                     </span>
                   </label>
                 ))}
               </div>
             </div>
           ))}
-        </section>
+        </div>
       )}
 
-      {/* --- TAB 2: KOSTEN --- */}
+      {/* === TAB 3: KOSTEN === */}
       {tab === 2 && (
-        <section className="panel">
-          <h3>Grote Kostenposten</h3>
-          <p className="muted">Vink aan wat vervangen moet worden. Bedragen zijn aanpasbaar.</p>
+        <div className="panel">
+          <h3>💸 Renovatie & Herstel</h3>
+          <p className="muted">Selecteer wat van toepassing is. De bedragen worden afgetrokken van de waarde.</p>
           
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {kostenMinderingItems.map(item => (
-              <div key={item.stateName} style={{ display: "flex", alignItems: "center", background: "#f9f9f9", padding: 10, borderRadius: 5 }}>
+              <div key={item.stateName} style={{ display: "flex", alignItems: "center", background: "#f9f9f9", padding: "10px 15px", borderRadius: 6 }}>
                 <input 
                   type="checkbox" 
                   name={item.stateName} 
                   checked={!!minderingChecked[item.stateName]} 
-                  onChange={handleMinderingCheck}
-                  style={{ width: "auto", marginRight: 15 }} 
+                  onChange={e => setMinderingChecked({ ...minderingChecked, [e.target.name]: e.target.checked })}
+                  style={{ width: "20px", height: "20px", marginRight: 15, accentColor: "#800000" }}
                 />
-                <div style={{ flex: 1, fontWeight: "bold" }}>{item.label}</div>
+                <div style={{ flex: 1, fontWeight: "500" }}>{item.label}</div>
                 {minderingChecked[item.stateName] && (
                   <div style={{ display: "flex", alignItems: "center" }}>
                     <span style={{ marginRight: 5 }}>€</span>
                     <input 
                       type="number" 
                       value={kosten[item.stateName]} 
-                      onChange={e => handleKostenChange(e, item.stateName)} 
-                      style={{ width: 100, fontWeight: "bold", color: "#800000" }}
+                      onChange={e => handleKostenInput(e, item.stateName, setKosten)}
+                      style={{ width: 100, fontWeight: "bold", textAlign: "right" }}
                     />
                   </div>
                 )}
               </div>
             ))}
           </div>
-
-          <h3 style={{ marginTop: 30 }}>Kosten uit Checklist</h3>
-          <p className="muted">Specifieke herstelpunten die je eerder hebt aangevinkt.</p>
-          {checklistGroepen.flatMap(g => g.items).filter(i => i.kostenVeld && checked[i.name]).length === 0 && (
-            <p><i>Geen kosten-items aangevinkt in de checklist.</i></p>
-          )}
-          
-          {checklistGroepen.flatMap(g => g.items).filter(i => i.kostenVeld && checked[i.name]).map(item => (
-             <div key={item.name} style={{ display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #eee" }}>
-               <div style={{ flex: 1 }}>{item.label}</div>
-               <div style={{ display: "flex", alignItems: "center" }}>
-                 <span style={{ marginRight: 5 }}>€</span>
-                 <input 
-                   type="number" 
-                   placeholder="0"
-                   value={kostenChecklist[item.name] || ""} 
-                   onChange={e => handleKostenChecklistChange(e, item.name)} 
-                   style={{ width: 100 }}
-                 />
-               </div>
-             </div>
-          ))}
-        </section>
+        </div>
       )}
 
-      {/* --- TAB 3: RESULTAAT --- */}
+      {/* === TAB 4: RESULTAAT === */}
       {tab === 3 && (
-        <section className="panel" style={{ textAlign: "center", padding: "40px 20px" }}>
-          <h2>Samenvatting</h2>
-          
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, textAlign: "left", maxWidth: 600, margin: "20px auto" }}>
-            <div>Marktwaarde (geschat):</div>
-            <div style={{ fontWeight: "bold" }}>€ {fmtBedrag(marktwaarde)}</div>
+        <div className="panel" style={{ padding: "40px" }}>
+          <h2 style={{ textAlign: "center", color: "#800000", marginBottom: 30 }}>Waarderapport</h2>
+
+          {/* SLIDER VOOR MARKTSENTIMENT */}
+          <div style={{ background: "#f4f4f4", padding: 20, borderRadius: 8, marginBottom: 30 }}>
+            <label style={{ fontWeight: "bold", display: "block", marginBottom: 10 }}>
+              Correctie op Marktwaarde: {marktSentiment > 0 ? `+${marktSentiment}%` : `${marktSentiment}%`}
+            </label>
+            <input 
+              type="range" 
+              min="-20" max="20" step="5" 
+              value={marktSentiment}
+              onChange={e => setMarktSentiment(Number(e.target.value))}
+              style={{ width: "100%", accentColor: "#800000" }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#666", marginTop: 5 }}>
+              <span>🏚️ Bouwval / Slechte ligging</span>
+              <span>Gemiddeld</span>
+              <span>✨ Instapklaar / Toplocatie</span>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 15, fontSize: "1.1rem" }}>
+            <div>Technische Marktwaarde ({oppervlakte}m² x €{m2Prijs}):</div>
+            <div style={{ fontWeight: "bold" }}>€ {fmtBedrag(technischeWaarde)}</div>
             
-            <div>Totale herstelkosten:</div>
-            <div style={{ color: "red", fontWeight: "bold" }}>- € {fmtBedrag(totaleKosten)}</div>
-            
-            <div style={{ borderTop: "1px solid #ddd", paddingTop: 10, fontWeight: "bold" }}>Advies Bieding:</div>
-            <div style={{ borderTop: "1px solid #ddd", paddingTop: 10, fontWeight: "bold", color: "#800000", fontSize: "1.2em" }}>
-               € {fmtBedrag(adviesBod)}
+            <div style={{ color: marktSentiment !== 0 ? "#000" : "#999" }}>
+              Marktcorrectie ({marktSentiment}%):
+            </div>
+            <div style={{ fontWeight: "bold", color: marktSentiment !== 0 ? "#000" : "#999" }}>
+              {marktSentiment > 0 ? "+" : ""} € {fmtBedrag(marktCorrectie)}
+            </div>
+
+            <div style={{ borderBottom: "1px solid #ddd", marginBottom: 10 }}></div><div style={{ borderBottom: "1px solid #ddd", marginBottom: 10 }}></div>
+
+            <div style={{ color: "red" }}>Totale Herstelkosten:</div>
+            <div style={{ color: "red", fontWeight: "bold" }}>- € {fmtBedrag(kostenTotaal)}</div>
+
+            <div style={{ fontSize: "1.4rem", fontWeight: "bold", color: "#800000", marginTop: 20 }}>
+              Advies Bieding:
+            </div>
+            <div style={{ fontSize: "1.4rem", fontWeight: "bold", color: "#800000", marginTop: 20, background: "#ffeef0", padding: "5px 15px", borderRadius: 4 }}>
+              € {fmtBedrag(adviesBod)}
             </div>
           </div>
           
-          <p className="muted" style={{ fontSize: "0.9rem" }}>
-            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de automatisch berekende (of ingevulde) m²-prijs van €{m2Prijs || 0}.
-          </p>
-        </section>
+          <div style={{ marginTop: 40, padding: 15, background: "#e6f7ff", borderRadius: 8, fontSize: "0.9rem" }}>
+            <strong>💡 Strategie tip:</strong> 
+            {adviesBod < (Number(vraagprijs) * 0.85) 
+              ? " Je adviesbod ligt meer dan 15% onder de vraagprijs. Onderbouw je bod goed met de kostenlijst uit tabblad 3!"
+              : " Je adviesbod ligt in de buurt van de vraagprijs. Check of er nog onderhandelruimte is op basis van de gebreken."}
+          </div>
+        </div>
       )}
+
+      {/* CSS STYLES IN-LINE FOR SIMPLICITY */}
+      <style>{`
+        .container { font-family: 'Segoe UI', sans-serif; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .panel { background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #eee; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.95rem; }
+        input[type="number"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 4px; font-size: 1rem; }
+        .btn-outline { 
+          display: inline-block; text-decoration: none; color: #555; border: 1px solid #ccc; 
+          padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; background: #fff; transition: all 0.2s;
+        }
+        .btn-outline:hover { background: #f0f0f0; border-color: #999; }
+        .muted { color: #666; font-size: 0.9rem; margin-top: -10px; margin-bottom: 20px; }
+      `}</style>
     </div>
   );
 }
