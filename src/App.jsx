@@ -118,7 +118,7 @@ function AdresAutoComplete({ setAdresFields }) {
     setQuery(suggestion.properties.label);
     setSuggestions([]);
     
-    // Sla coördinaten op voor DVF én Kadaster check
+    // Sla coördinaten op
     const [lon, lat] = suggestion.geometry.coordinates;
     
     setAdresFields({
@@ -178,40 +178,59 @@ function App() {
   const [dvfLoading, setDvfLoading] = useState(false);
   const [dvfInfo, setDvfInfo] = useState("");
   
-  // Nieuw: Kadaster data
-  const [kadasterInfo, setKadasterInfo] = useState(null); // { section: "B", numero: "62", opp: 1234 }
+  // Kadaster data
+  const [kadasterInfo, setKadasterInfo] = useState(null); 
   const [kadasterLoading, setKadasterLoading] = useState(false);
 
-  // --- EFFECT: Haal DVF én Kadaster op bij adreswijziging ---
+  // --- SLIMME ZOEKFUNCTIE (RECURSIEF) ---
+  const fetchPricesSmart = async (lat, lon, distances = [500, 1000, 3000, 5000]) => {
+    setDvfLoading(true);
+    setM2Prijs(""); 
+    
+    for (const dist of distances) {
+        setDvfInfo(`Zoeken binnen straal van ${dist}m...`);
+        try {
+            const res = await fetch(`https://api.cquest.org/dvf?lat=${lat}&lon=${lon}&dist=${dist}`);
+            const data = await res.json();
+            
+            // Filter: Alleen huizen, echte verkopen, normale prijs
+            const relevant = data.features.filter(f => 
+                f.properties.nature_mutation === "Vente" &&
+                f.properties.type_local === "Maison" &&
+                f.properties.valeur_fonciere > 10000 && // Filter garages/kleine dingen eruit
+                f.properties.surface_reelle_bati > 0
+            );
+
+            if (relevant.length > 0) {
+                // GEVONDEN!
+                let totalM2Price = 0;
+                relevant.forEach(item => {
+                    totalM2Price += (item.properties.valeur_fonciere / item.properties.surface_reelle_bati);
+                });
+                const avg = Math.round(totalM2Price / relevant.length);
+                
+                setM2Prijs(avg);
+                setDvfInfo(`✅ Gevonden: ${relevant.length} verkopen (straal ${dist}m).`);
+                setDvfLoading(false);
+                return; // Stop de loop, we hebben prijs
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        // Niks gevonden? Loop gaat door naar volgende afstand...
+    }
+    
+    // Als we hier komen is er zelfs op 5km niks gevonden
+    setDvfInfo("❌ Geen vergelijkbare verkopen gevonden binnen 5km.");
+    setDvfLoading(false);
+  };
+
+  // --- EFFECT: Trigger bij adreswijziging ---
   useEffect(() => {
     if (adresFields.lat && adresFields.lon) {
-      // 1. DVF Prijzen
-      setDvfLoading(true);
-      setDvfInfo("Prijzen ophalen...");
-      fetch(`https://api.cquest.org/dvf?lat=${adresFields.lat}&lon=${adresFields.lon}&dist=500`)
-        .then(res => res.json())
-        .then(data => {
-          const relevant = data.features.filter(f => 
-            f.properties.nature_mutation === "Vente" &&
-            f.properties.type_local === "Maison" &&
-            f.properties.valeur_fonciere > 0 &&
-            f.properties.surface_reelle_bati > 0
-          );
-
-          if (relevant.length > 0) {
-            let totalM2Price = 0;
-            relevant.forEach(item => {
-              totalM2Price += (item.properties.valeur_fonciere / item.properties.surface_reelle_bati);
-            });
-            setM2Prijs(Math.round(totalM2Price / relevant.length));
-            setDvfInfo(`Gevonden: ${relevant.length} verkopen in de buurt.`);
-          } else {
-            setDvfInfo("Geen verkopen in straal van 500m.");
-            setM2Prijs(""); 
-          }
-          setDvfLoading(false);
-        })
-        .catch(() => { setDvfInfo("Fout bij ophalen DVF."); setDvfLoading(false); });
+      
+      // 1. Start slimme prijs zoektocht
+      fetchPricesSmart(adresFields.lat, adresFields.lon);
 
       // 2. Kadaster Perceel (IGN API)
       setKadasterLoading(true);
@@ -225,19 +244,15 @@ function App() {
             setKadasterInfo({
               section: p.section,
               numero: p.numero,
-              oppervlakte: p.contenance // in m2
+              oppervlakte: p.contenance 
             });
-            // Vul automatisch perceelgrootte in als die leeg is
             if (!perceel) setPerceel(p.contenance);
           } else {
             setKadasterInfo(null);
           }
           setKadasterLoading(false);
         })
-        .catch(err => {
-          console.error("Kadaster API fout", err);
-          setKadasterLoading(false);
-        });
+        .catch(() => setKadasterLoading(false));
         
     }
   }, [adresFields.lat, adresFields.lon]);
@@ -276,10 +291,6 @@ function App() {
 
   // Links
   const georisquesUrl = adresFields.insee ? `https://www.georisques.gouv.fr/cartographie?code_commune=${adresFields.insee}` : "https://www.georisques.gouv.fr/";
-  
-  // Kadaster link genereren (recherchecadastrale stijl)
-  // Format vaak: prefix(3) + insee(3) + 000 + section(2) + numero(4)
-  // Maar we gebruiken een simpele directe link naar geoportail die betrouwbaarder is met coördinaten.
   const geoportailUrl = adresFields.lat ? `https://www.geoportail.gouv.fr/carte?c=${adresFields.lon},${adresFields.lat}&z=19&l0=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2::GEOPORTAIL:OGC:WMTS(1)&l1=CADASTRE.PARCELLES::GEOPORTAIL:OGC:WMTS(0.8)&permalink=yes` : "https://www.geoportail.gouv.fr/carte";
 
   return (
@@ -354,7 +365,11 @@ function App() {
                  {dvfLoading && <span style={{ position: "absolute", right: 10, top: 10 }}>⏳</span>}
                </div>
                <small style={{ display: "block", marginTop: 4, color: "#666" }}>
-                 {dvfInfo}
+                 {dvfInfo ? (
+                    <span style={{ color: dvfInfo.includes("Gevonden") ? "green" : "orange", fontWeight: "bold" }}>
+                        {dvfInfo}
+                    </span>
+                 ) : "Kies een adres om te starten."}
                </small>
             </div>
             
@@ -503,7 +518,7 @@ function App() {
           </div>
           
           <p className="muted" style={{ fontSize: "0.9rem" }}>
-            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de m²-prijs van €{m2Prijs || 0}.
+            * Dit advies is gebaseerd op {oppervlakte || 0}m² woonoppervlakte keer de automatisch berekende (of ingevulde) m²-prijs van €{m2Prijs || 0}.
           </p>
         </section>
       )}
