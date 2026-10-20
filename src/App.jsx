@@ -297,7 +297,7 @@ function App() {
       </div>
 
       {/* TABS */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, borderBottom: "2px solid #eee" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20, borderBottom: "2px solid #eee" }}>
         {["Object & Waarde", "Checklist & Staat", "Kosten", "Resultaat"].map((t, i) => (
           <button 
             key={i} 
@@ -563,9 +563,9 @@ function App() {
         <table>
           <tbody>
             <tr><td>Technische waarde ({oppervlakte || 0} m² x € {m2Prijs || 0})</td><td className="pr-num">€ {fmtBedrag(technischeWaarde)}</td></tr>
-            <tr><td>Correctie staat/ligging ({marktSentiment}%)</td><td className="pr-num">{marktSentiment > 0 ? "+" : ""} € {fmtBedrag(marktCorrectie)}</td></tr>
-            <tr><td>Totale herstelkosten</td><td className="pr-num">- € {fmtBedrag(kostenTotaal)}</td></tr>
-            <tr className="pr-totaal"><td>Advies bieding</td><td className="pr-num">€ {fmtBedrag(adviesBod)}</td></tr>
+            <tr><td>Correctie staat/ligging ({marktSentiment}%)</td><td className="pr-num">{marktSentiment > 0 ? "+" : ""} € {(Number(marktCorrectie) || 0).toLocaleString("nl-NL")}</td></tr>
+            <tr><td>Totale herstelkosten</td><td className="pr-num">- € {(Number(kostenTotaal) || 0).toLocaleString("nl-NL")}</td></tr>
+            <tr className="pr-totaal"><td>Advies bieding</td><td className="pr-num">€ {(Number(adviesBod) || 0).toLocaleString("nl-NL")}</td></tr>
           </tbody>
         </table>
         <h2>Herstelkosten</h2>
@@ -596,8 +596,8 @@ function App() {
 
       {/* CSS STYLES IN-LINE FOR SIMPLICITY */}
       <style>{`
-        .container { font-family: 'Segoe UI', sans-serif; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .container { font-family: 'Segoe UI', sans-serif; width: 100%; box-sizing: border-box; padding: 0 12px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 20px; }
         .panel { background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #eee; }
         label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.95rem; }
         input[type="number"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 4px; font-size: 1rem; }
