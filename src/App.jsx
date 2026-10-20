@@ -273,6 +273,20 @@ function App() {
   const handleCheck = (e) => setChecked({ ...checked, [e.target.name]: e.target.checked });
   const handleKostenInput = (e, name, setter) => setter(prev => ({ ...prev, [name]: Number(e.target.value) }));
 
+  // --- AFDRUKKEN ALS PDF (browser-print, geen bibliotheek of server) ---
+  const handleAfdrukken = () => {
+    try {
+      window.print();
+    } catch (e) {
+      console.error(e);
+      alert("Afdrukken is niet gelukt. Probeer Ctrl+P (of Cmd+P).");
+    }
+  };
+  const rapportDatum = new Date().toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" });
+  const gekozenKosten = kostenMinderingItems.filter(i => minderingChecked[i.stateName]);
+  const checklistTotaal = checkboxNames.length;
+  const checklistAantal = checkboxNames.filter(n => checked[n]).length;
+
   return (
     <div className="container" style={{ maxWidth: 900, margin: "0 auto", fontFamily: "Mulish, sans-serif", color: "#333" }}>
       
@@ -515,8 +529,70 @@ function App() {
               ? " Je adviesbod ligt meer dan 15% onder de vraagprijs. Onderbouw je bod goed met de kostenlijst uit tabblad 3!"
               : " Je adviesbod ligt in de buurt van de vraagprijs. Check of er nog onderhandelruimte is op basis van de gebreken."}
           </div>
+
+          <div style={{ marginTop: 25, textAlign: "center" }}>
+            <button
+              type="button"
+              onClick={handleAfdrukken}
+              style={{ padding: "10px 24px", fontSize: "1em", borderRadius: 6, background: "#800000", color: "#fff", border: "none" }}
+            >
+              Rapport afdrukken / opslaan als PDF
+            </button>
+            <p className="muted" style={{ marginTop: 8 }}>Kies in het afdrukvenster 'Opslaan als PDF'.</p>
+          </div>
         </div>
       )}
+
+      {/* === AFDRUKRAPPORT: alleen zichtbaar bij afdrukken === */}
+      <div className="print-rapport">
+        <h1>Aankoopkompas Frankrijk: waarderapport</h1>
+        <p className="pr-meta">Opgesteld op {rapportDatum}. Indicatief, geen taxatie.</p>
+        <h2>Object</h2>
+        <table>
+          <tbody>
+            <tr><td>Adres</td><td>{adresFields.adres || "–"}</td></tr>
+            {kadasterInfo && <tr><td>Kadaster</td><td>{kadasterInfo.section} - {kadasterInfo.numero} ({kadasterInfo.oppervlakte} m²)</td></tr>}
+            <tr><td>Vraagprijs</td><td>€ {fmtBedrag(vraagprijs)}</td></tr>
+            <tr><td>Woonoppervlakte</td><td>{oppervlakte ? `${oppervlakte} m²` : "–"}</td></tr>
+            <tr><td>Perceel</td><td>{perceel ? `${perceel} m²` : "–"}</td></tr>
+            <tr><td>Bouwjaar</td><td>{bouwjaar || "–"}</td></tr>
+            <tr><td>Marktprijs regio</td><td>{m2Prijs ? `€ ${fmtBedrag(m2Prijs)} per m²` : "–"}</td></tr>
+          </tbody>
+        </table>
+        <h2>Berekening</h2>
+        <table>
+          <tbody>
+            <tr><td>Technische waarde ({oppervlakte || 0} m² x € {m2Prijs || 0})</td><td className="pr-num">€ {fmtBedrag(technischeWaarde)}</td></tr>
+            <tr><td>Correctie staat/ligging ({marktSentiment}%)</td><td className="pr-num">{marktSentiment > 0 ? "+" : ""} € {fmtBedrag(marktCorrectie)}</td></tr>
+            <tr><td>Totale herstelkosten</td><td className="pr-num">- € {fmtBedrag(kostenTotaal)}</td></tr>
+            <tr className="pr-totaal"><td>Advies bieding</td><td className="pr-num">€ {fmtBedrag(adviesBod)}</td></tr>
+          </tbody>
+        </table>
+        <h2>Herstelkosten</h2>
+        {gekozenKosten.length === 0 ? (
+          <p>Geen herstelposten gekozen.</p>
+        ) : (
+          <table>
+            <tbody>
+              {gekozenKosten.map(i => (
+                <tr key={i.stateName}><td>{i.label}</td><td className="pr-num">€ {fmtBedrag(kosten[i.stateName])}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <h2>Checklist ({checklistAantal} van {checklistTotaal} gecontroleerd)</h2>
+        {checklistGroepen.map(g => (
+          <div key={g.naam} className="pr-groep">
+            <h3>{g.naam}</h3>
+            <ul>
+              {g.items.map(i => (
+                <li key={i.name}>{checked[i.name] ? "[x]" : "[ ]"} {i.label}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <p className="pr-meta">Bron prijzen: DVF (Franse overheid), indicatief. Laat bij aankoop altijd een notaris en een bouwkundige meekijken.</p>
+      </div>
 
       {/* CSS STYLES IN-LINE FOR SIMPLICITY */}
       <style>{`
@@ -531,6 +607,27 @@ function App() {
         }
         .btn-outline:hover { background: #f0f0f0; border-color: #999; }
         .muted { color: #666; font-size: 0.9rem; margin-top: -10px; margin-bottom: 20px; }
+        .print-rapport { display: none; }
+        @media print {
+          @page { size: A4; margin: 15mm; }
+          :root { color: #000; background: #fff; color-scheme: light; }
+          body { display: block; min-height: 0; background: #fff; }
+          .container > *:not(.print-rapport) { display: none !important; }
+          .container { max-width: none !important; margin: 0 !important; padding: 0 !important; color: #000; }
+          .print-rapport { display: block; font-family: system-ui, Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #000; }
+          .print-rapport h1 { font-size: 18pt; margin: 0 0 4pt; color: #800000; }
+          .print-rapport h2 { font-size: 13pt; margin: 14pt 0 4pt; border-bottom: 1px solid #999; break-after: avoid; }
+          .print-rapport h3 { font-size: 11pt; margin: 8pt 0 2pt; break-after: avoid; }
+          .print-rapport table { width: 100%; border-collapse: collapse; }
+          .print-rapport td { padding: 3pt 4pt; border-bottom: 1px solid #ddd; vertical-align: top; }
+          .print-rapport td.pr-num { text-align: right; white-space: nowrap; font-weight: 600; }
+          .print-rapport tr { break-inside: avoid; }
+          .print-rapport tr.pr-totaal td { font-weight: 700; font-size: 12pt; border-top: 2px solid #800000; }
+          .print-rapport ul { list-style: none; padding: 0; margin: 0; }
+          .print-rapport li { padding: 1pt 0; break-inside: avoid; }
+          .print-rapport .pr-groep { break-inside: avoid; }
+          .print-rapport .pr-meta { font-size: 9pt; color: #444; margin: 6pt 0; }
+        }
       `}</style>
     </div>
   );

@@ -424,25 +424,9 @@ function App() {
     ? `https://www.georisques.gouv.fr/cartographie?code_postal=${adresFields.postcode}`
     : "https://www.georisques.gouv.fr/";
 
-  // PDF generator
-  async function handlePDFGen() {
-    const body = {
-      adres: adresFields.adres,
-      vraagprijs,
-      adviesprijs,
-      marktwaarde,
-      vasteLasten: { taxeF, taxeH, riolering },
-      checklist: { checked, select: checkSelect },
-      kostenMindering: kosten,
-      herstel: kostenHerstel,
-      bouwgrondM2Prijs
-    };
-    await fetch("/api/generate-pdf", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    alert("PDF wordt gegenereerd (dummy call).");
+  // PDF: browser-print (de actieve app staat in App.jsx)
+  function handlePDFGen() {
+    window.print();
   }
 
   // --- Waarschuwingen ---
